@@ -110,7 +110,7 @@ def get_playlist_tracks(db, playlist_rowid):
     ''', (playlist_rowid,)).fetchall()
 
     if not rows:
-        return []
+        return [], []
 
     media_rowids = [r[0] for r in rows]
     bpm_by_rowid = {r[0]: r[1] for r in rows}
@@ -233,6 +233,7 @@ def enrich_with_keys(tracks, progress_cb=None):
     cache = load_key_cache()
     changed = False
     enriched = []
+    skip_reasons = []
 
     for i, t in enumerate(tracks):
         if progress_cb:
@@ -260,6 +261,7 @@ def enrich_with_keys(tracks, progress_cb=None):
                 key, mode, spectral_flux, centroid, onset_density, detected_bpm = extract_audio_features(path)
             except Exception as e:
                 print(f"    Skipped ({e})")
+                skip_reasons.append(f"Analysis failed for {t['name']}: {e}")
                 continue
             cache[path] = {
                 'mtime': mtime, 'key': key, 'mode': mode,
@@ -1079,6 +1081,10 @@ def _run_sort(db, playlist_choice, output_name, sa_runs, dry_run, export_path=No
 
     if not tracks:
         print("No local tracks found in this playlist.")
+        sys.exit(1)
+
+    if len(tracks) < 2:
+        print("Playlist must contain at least 2 tracks to be sorted.")
         sys.exit(1)
 
     missing_bpm = sum(1 for t in tracks if not t['tempo'])

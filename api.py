@@ -7,9 +7,11 @@ from __future__ import annotations
 import io
 import threading
 import uuid
+import time
 from typing import Any, Optional
 
 import os
+import sqlite3
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -113,14 +115,21 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
     cb = progress_cb or (lambda f, m='': None)
 
     cb(0.0, 'Loading tracks…')
-    db = open_djay_db(custom_path=app_config['db_path'])
-    tracks, skip_reasons = get_playlist_tracks(db, req.playlist_id)
-    playlists = list_playlists(db)
-    pl_name = next((n for r, n, _ in playlists if r == req.playlist_id), 'Sorted')
-    db.close()
+    db = None
+    try:
+        db = open_djay_db(custom_path=app_config['db_path'])
+        tracks, skip_reasons = get_playlist_tracks(db, req.playlist_id)
+        playlists = list_playlists(db)
+        pl_name = next((n for r, n, _ in playlists if r == req.playlist_id), 'Sorted')
+    finally:
+        if db:
+            db.close()
 
     if not tracks:
         raise ValueError('No local tracks found in this playlist.')
+
+    if len(tracks) < 2:
+        raise ValueError('Playlist must contain at least 2 tracks to be sorted.')
 
     if skip_reasons:
         from collections import Counter
@@ -235,9 +244,24 @@ def _run_job(job_id: str, req: SortRequest) -> None:
 
     try:
         result = _do_sort(req, progress_cb=cb)
-        _jobs[job_id].update({'status': 'done', 'progress': 1.0, 'result': result})
+        _jobs[job_id].update({'status': 'done', 'progress': 1.0, 'result': result, 'finished_at': time.time()})
     except Exception as e:
-        _jobs[job_id].update({'status': 'error', 'error': str(e)})
+        _jobs[job_id].update({'status': 'error', 'error': str(e), 'finished_at': time.time()})
+
+
+def _cleanup_jobs():
+    """Background worker to evict old jobs from memory to prevent leaks."""
+    while True:
+        time.sleep(300) # Run every 5 minutes
+        now = time.time()
+        to_delete = []
+        for jid, data in _jobs.items():
+            if data.get('status') in ('done', 'error'):
+                finished_at = data.get('finished_at', 0)
+                if now - finished_at > 900: # Evict after 15 minutes
+                    to_delete.append(jid)
+        for jid in to_delete:
+            del _jobs[jid]
 
 
 def _build_m3u(tracks: list[dict]) -> str:
@@ -256,12 +280,15 @@ def _build_m3u(tracks: list[dict]) -> str:
 @app.get('/config')
 def get_config():
     is_found = False
+    db = None
     try:
         db = open_djay_db(custom_path=app_config['db_path'])
-        db.close()
         is_found = True
     except Exception:
         is_found = False
+    finally:
+        if db:
+            db.close()
     return {'db_path': app_config['db_path'], 'found': is_found}
 
 
@@ -281,13 +308,22 @@ def health():
 
 @app.get('/playlists', response_model=list[Playlist])
 def get_playlists():
+    db = None
     try:
         db = open_djay_db(custom_path=app_config['db_path'])
+        rows = list_playlists(db)
+        return [{'id': r, 'name': n, 'track_count': c} for r, n, c in rows]
+    except sqlite3.OperationalError as e:
+        if 'locked' in str(e).lower():
+            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
+        raise HTTPException(status_code=500, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    rows = list_playlists(db)
-    db.close()
-    return [{'id': r, 'name': n, 'track_count': c} for r, n, c in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if db:
+            db.close()
 
 
 @app.post('/sort', response_model=SortResponse)
@@ -298,6 +334,12 @@ def sort_playlist(req: SortRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except sqlite3.OperationalError as e:
+        if 'locked' in str(e).lower():
+            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post('/sort/m3u')
@@ -309,6 +351,12 @@ def sort_and_export_m3u(req: SortRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
+    except sqlite3.OperationalError as e:
+        if 'locked' in str(e).lower():
+            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     content = _build_m3u(result['tracks'])
     return StreamingResponse(
@@ -321,6 +369,20 @@ def sort_and_export_m3u(req: SortRequest):
 @app.post('/sort/start')
 def start_sort(req: SortRequest):
     """Start a sort job in the background; returns a job_id to poll."""
+    # Guard against database locks before spawning a thread
+    db = None
+    try:
+        db = open_djay_db(custom_path=app_config['db_path'])
+    except sqlite3.OperationalError as e:
+        if 'locked' in str(e).lower():
+            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
+        raise HTTPException(status_code=500, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    finally:
+        if db:
+            db.close()
+
     job_id = uuid.uuid4().hex[:8]
     _jobs[job_id] = {'status': 'running', 'progress': 0.0, 'stage': 'Starting…'}
     threading.Thread(target=_run_job, args=(job_id, req), daemon=True).start()
@@ -333,3 +395,6 @@ def get_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail='Job not found')
     return job
+
+# Start cleanup thread on startup
+threading.Thread(target=_cleanup_jobs, daemon=True).start()
