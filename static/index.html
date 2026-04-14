@@ -263,17 +263,6 @@
     .tr-ok    { color: #f59e0b; }
     .tr-clash { color: #ef4444; }
 
-    /* Visual Heatmap Bridge */
-    .transition-bridge {
-      height: 4px;
-      width: 40px;
-      border-radius: 2px;
-      display: inline-block;
-      margin-right: 8px;
-      vertical-align: middle;
-      transition: all 0.3s ease;
-    }
-
     /* energy pips */
     .pips { display: inline-flex; gap: 2px; vertical-align: middle; }
     .pip { width: 5px; height: 11px; border-radius: 2px; background: var(--border); }
@@ -327,21 +316,10 @@
       position: fixed;
       top: 0; left: 0;
       width: 100vw; height: 100vh;
-      z-index: 0;           /* must be > -1 to sit above the viewport base */
+      z-index: 0;
       pointer-events: none;
     }
-    /* Lift page content above the canvas */
     header, main, .app-loader, .modal-overlay { position: relative; z-index: 1; }
-
-    /* ── Cascading track row reveal ── */
-    @keyframes cascadeIn {
-      from { opacity: 0; transform: translateX(-10px); }
-      to   { opacity: 1; transform: translateX(0); }
-    }
-    .track-row-animated {
-      opacity: 0;
-      animation: cascadeIn 0.3s forwards ease-out;
-    }
 
     /* ── Custom Combobox ── */
     .combobox-container { position: relative; width: 100%; }
@@ -386,11 +364,9 @@
     .row-highlight {
       background: rgba(249, 115, 22, 0.15) !important;
       outline: 1px solid var(--accent);
-      transform: scale(1.01);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       z-index: 5;
       position: relative;
-      transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+      transition: background 0.15s ease;
     }
 
     /* ── Error / warning banners ── */
@@ -1004,8 +980,6 @@
     el.classList.remove('reveal');
     void el.offsetWidth; // force reflow so animation re-triggers
     el.classList.add('reveal');
-    // Remove the class once done so transform: translateY(0) doesn't persist
-    // — a lingering transform breaks position:sticky on child elements
     el.addEventListener('animationend', () => el.classList.remove('reveal'), { once: true });
   }
 
@@ -1016,7 +990,6 @@
     const step = ts => {
       if (!startTs) startTs = ts;
       const p = Math.min((ts - startTs) / duration, 1);
-      // ease-out: fast start, smooth landing
       const eased = 1 - Math.pow(1 - p, 3);
       const cur = start + (end - start) * eased;
       el.textContent = `${prefix}${Number.isInteger(end) ? Math.round(cur) : cur.toFixed(1)}${suffix}`;
@@ -1065,8 +1038,6 @@
     data.tracks.forEach((t, i) => {
       // Track row
       const tr = document.createElement('tr');
-      tr.className = 'track-row-animated';
-      tr.style.animationDelay = `${i * 0.02}s`;
       const keyColor = CAMELOT_COLORS[t.camelot] ?? '#555';
       tr.dataset.index = i;
       tr.onmouseenter = () => highlightChartDot(i);
@@ -1087,11 +1058,6 @@
         const bpmDelta  = Math.abs(t.bpm - next.bpm);
         const dist      = camelotDist(t.camelot, next.camelot);
         
-        // Color for the heatmap bridge
-        let bridgeColor = 'var(--green)';
-        if (dist > 2 || bpmDelta > 15) bridgeColor = 'var(--red)';
-        else if (dist > 1 || bpmDelta > 5) bridgeColor = '#f59e0b';
-
         const bpmColor  = bpmDelta > 20 ? '#ef4444' : bpmDelta > 10 ? '#f59e0b' : 'var(--border)';
         const keyClass  = dist <= 1 ? 'tr-good' : dist === 2 ? 'tr-ok' : 'tr-clash';
         const keySymbol = dist <= 1 ? '✓' : dist === 2 ? '~' : '✗';
@@ -1103,7 +1069,6 @@
           <td colspan="2"></td>
           <td><span style="color:${bpmColor};font-family:var(--mono)">±${bpmDelta.toFixed(0)}</span></td>
           <td>
-            <span class="transition-bridge" style="background:${bridgeColor}"></span>
             <span class="tr-pill ${keyClass}">${keySymbol} ${esc(t.camelot)}→${esc(next.camelot)}</span>
           </td>
           <td></td>
@@ -1112,7 +1077,6 @@
       }
     });
 
-    // Single DOM write — table is fully built before it becomes visible
     tbody.appendChild(fragment);
 
     // ── Reveal tracklist card ────────────────────────────────────────────────
@@ -1291,10 +1255,8 @@
     const idx    = Math.max(0, Math.min(_chartTracks.length - 1,
                     Math.round((mouseX - CP.left) / plotW * (_chartTracks.length - 1))));
 
-    // 1. Redraw chart with highlight
     drawChart(_chartTracks, Math.max(0, Math.min(_chartTracks.length - 1, idx)));
 
-    // 2. Highlight the table row visually (no scrolling)
     document.querySelectorAll('tr:not(.tr-row)').forEach(r => r.classList.remove('row-highlight'));
     const targetRow = document.querySelector(`tr[data-index="${idx}"]`);
     if (targetRow) targetRow.classList.add('row-highlight');
@@ -1317,13 +1279,11 @@
     const MAX_RIPPLES    = 60;
     let   lastMouseSpawn = 0;
 
-    // Each ripple is a plain object — no class overhead
     function spawnRipple(x, y, speed, decay, baseAlpha, lineWidth) {
-      if (ripples.length >= MAX_RIPPLES) ripples.shift(); // drop oldest, not newest
+      if (ripples.length >= MAX_RIPPLES) ripples.shift();
       ripples.push({ x, y, r: 0, speed, decay, baseAlpha, lineWidth, life: 1.0 });
     }
 
-    // A click drops a "stone": three concentric rings with staggered timing
     function dropStone(x, y) {
       spawnRipple(x, y, 4.0, 0.013, 0.70, 2.0);
       setTimeout(() => spawnRipple(x, y, 3.0, 0.010, 0.50, 1.5),  90);
@@ -1336,28 +1296,22 @@
       fluidH = window.innerHeight;
       fluidCanvas.width  = fluidW * dpr;
       fluidCanvas.height = fluidH * dpr;
-      fluidCtx.setTransform(dpr, 0, 0, dpr, 0, 0); // keep coords in CSS px
+      fluidCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
     function fluidAnimate() {
-      // Solid fill — no accumulation, no ghosting
       fluidCtx.fillStyle = '#050506';
       fluidCtx.fillRect(0, 0, fluidW, fluidH);
 
       for (let i = ripples.length - 1; i >= 0; i--) {
         const rp = ripples[i];
-
-        // Expansion decelerates as energy dissipates (fast birth → slow death)
         rp.r    += rp.speed * rp.life;
         rp.life -= rp.decay;
 
         if (rp.life <= 0) { ripples.splice(i, 1); continue; }
 
-        // Fade in from r=0 so rings don't pop; fade out as life drops
         const fadeIn  = Math.min(rp.r / 15, 1);
         const opacity = rp.baseAlpha * rp.life * fadeIn;
-
-        // Line thins as ring spreads (energy over larger circumference)
         const lw = Math.max(0.3, rp.lineWidth * rp.life);
 
         fluidCtx.beginPath();
@@ -1370,7 +1324,6 @@
       requestAnimationFrame(fluidAnimate);
     }
 
-    // Time-throttled mousemove — at most one ripple per 80 ms (~12/s)
     window.addEventListener('mousemove', e => {
       const now = Date.now();
       if (now - lastMouseSpawn > 80) {
@@ -1391,14 +1344,12 @@
   btnSort.addEventListener('click', doSort);
   btnM3u.addEventListener('click', doM3u);
 
-  // Open the custom dropdown on focus / click
   selPl.addEventListener('focus', () => {
     const term = selPl.value.trim().toLowerCase();
     renderDropdown(term ? allPlaylists.filter(p => p.name.toLowerCase().includes(term)) : allPlaylists);
     plDropdown.classList.remove('hidden');
   });
 
-  // Filter as the user types; clear stored ID since selection is stale
   selPl.addEventListener('input', () => {
     delete selPl.dataset.id;
     inpName.value = '';
@@ -1407,7 +1358,6 @@
     plDropdown.classList.remove('hidden');
   });
 
-  // Close dropdown when clicking outside
   window.addEventListener('click', e => {
     if (!e.target.closest('.combobox-container')) plDropdown.classList.add('hidden');
   });
@@ -1464,7 +1414,6 @@
   }
     btnSavePath.addEventListener('click', savePath);
 
-  // ── Slider value displays ──────────────────────────────────────────────────
   function setupSlider(sliderId, displayId, format) {
     const slider  = document.getElementById(sliderId);
     const display = document.getElementById(displayId);
@@ -1475,19 +1424,16 @@
   setupSlider('inp-runs',    'runs-val',    null);
   setupSlider('inp-max-bpm', 'bpm-jump-val', v => parseInt(v) >= 21 ? '∞' : v);
 
-  // ── Write-mode progressive disclosure ─────────────────────────────────────
   chkWrite.addEventListener('change', () => {
     document.getElementById('write-options').classList.toggle('visible', chkWrite.checked);
     btnSort.classList.toggle('btn-warning', chkWrite.checked);
   });
 
-  // ── Keyboard shortcuts ─────────────────────────────────────────────────────
   selPl.addEventListener('keydown', e => { if (e.key === 'Enter') doSort(); });
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') modalOverlay.classList.add('hidden');
   });
 
-  // ── Copy tracklist to clipboard ────────────────────────────────────────────
   document.getElementById('btn-copy-list').addEventListener('click', () => {
     if (!lastResult) return;
     const text = lastResult.tracks
