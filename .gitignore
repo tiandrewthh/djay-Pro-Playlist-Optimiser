@@ -1,0 +1,24 @@
+# Aider
+.aider*
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+
+# macOS
+.DS_Store
+
+# App-generated files
+.cache
+*.pkl
+*.dj_key_cache.json
+
+# IDE
+.vscode/
+.idea/
+*.swp

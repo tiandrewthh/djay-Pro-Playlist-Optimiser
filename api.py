@@ -45,10 +45,16 @@ app = FastAPI(
     version='0.1.0',
 )
 
+_cors_origins_env = os.getenv('CORS_ORIGINS', '')
+_cors_origins = (
+    [o.strip() for o in _cors_origins_env.split(',') if o.strip()]
+    if _cors_origins_env
+    else ['http://localhost:5173', 'http://127.0.0.1:5173',
+          'http://localhost:3000', 'http://127.0.0.1:3000']
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['http://localhost:5173', 'http://127.0.0.1:5173',
-                   'http://localhost:3000', 'http://127.0.0.1:3000'],
+    allow_origins=_cors_origins,
     allow_methods=['*'],
     allow_headers=['*'],
 )
@@ -303,7 +309,22 @@ def set_config(config: dict):
 
 @app.get('/health')
 def health():
-    return {'status': 'ok'}
+    db = None
+    try:
+        db = open_djay_db(custom_path=app_config['db_path'])
+        db_status = 'ok'
+    except FileNotFoundError:
+        db_status = 'not_found'
+    except sqlite3.OperationalError:
+        db_status = 'locked'
+    except Exception:
+        db_status = 'error'
+    finally:
+        if db:
+            db.close()
+
+    running_jobs = sum(1 for j in _jobs.values() if j.get('status') == 'running')
+    return {'status': 'ok', 'db': db_status, 'running_jobs': running_jobs}
 
 
 @app.get('/playlists', response_model=list[Playlist])
@@ -366,9 +387,15 @@ def sort_and_export_m3u(req: SortRequest):
     )
 
 
+_MAX_CONCURRENT_JOBS = 3
+
 @app.post('/sort/start')
 def start_sort(req: SortRequest):
     """Start a sort job in the background; returns a job_id to poll."""
+    running = sum(1 for j in _jobs.values() if j.get('status') == 'running')
+    if running >= _MAX_CONCURRENT_JOBS:
+        raise HTTPException(status_code=429, detail='Too many sort jobs running. Please wait for one to finish.')
+
     # Guard against database locks before spawning a thread
     db = None
     try:

@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
   <title>DJ Playlist Optimiser</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💿</text></svg>">
   <style>
     :root {
+      color-scheme: dark;
       --bg:          #0a0a0b;
       --surface:     rgba(22, 22, 26, 0.75);
       --surface2:    rgba(32, 32, 38, 0.85);
@@ -319,7 +321,7 @@
       z-index: 0;
       pointer-events: none;
     }
-    header, main, .app-loader, .modal-overlay { position: relative; z-index: 1; }
+    header, main, footer, .app-loader, .modal-overlay { position: relative; z-index: 1; }
 
     /* ── Custom Combobox ── */
     .combobox-container { position: relative; width: 100%; }
@@ -1356,10 +1358,14 @@
     const term = selPl.value.trim().toLowerCase();
     renderDropdown(term ? allPlaylists.filter(p => p.name.toLowerCase().includes(term)) : allPlaylists);
     plDropdown.classList.remove('hidden');
+    dropdownActiveIdx = -1;
   });
 
   window.addEventListener('click', e => {
-    if (!e.target.closest('.combobox-container')) plDropdown.classList.add('hidden');
+    if (!e.target.closest('.combobox-container')) {
+      plDropdown.classList.add('hidden');
+      dropdownActiveIdx = -1;
+    }
   });
 
     // ── Config Management ──────────────────────────────────────────────────────
@@ -1429,7 +1435,50 @@
     btnSort.classList.toggle('btn-warning', chkWrite.checked);
   });
 
-  selPl.addEventListener('keydown', e => { if (e.key === 'Enter') doSort(); });
+  // ── Dropdown keyboard navigation ───────────────────────────────────────────
+  let dropdownActiveIdx = -1;
+
+  function getDropdownItems() {
+    return [...plDropdown.querySelectorAll('.dropdown-item')];
+  }
+
+  function setDropdownActive(idx) {
+    const items = getDropdownItems();
+    items.forEach((el, i) => el.classList.toggle('active', i === idx));
+    if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
+    dropdownActiveIdx = idx;
+  }
+
+  selPl.addEventListener('keydown', e => {
+    const isOpen = !plDropdown.classList.contains('hidden');
+    const items  = getDropdownItems();
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!isOpen) {
+        const term = selPl.value.trim().toLowerCase();
+        renderDropdown(term ? allPlaylists.filter(p => p.name.toLowerCase().includes(term)) : allPlaylists);
+        plDropdown.classList.remove('hidden');
+        setDropdownActive(0);
+      } else {
+        setDropdownActive(Math.min(dropdownActiveIdx + 1, items.length - 1));
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (isOpen) setDropdownActive(Math.max(dropdownActiveIdx - 1, 0));
+    } else if (e.key === 'Escape') {
+      plDropdown.classList.add('hidden');
+      dropdownActiveIdx = -1;
+    } else if (e.key === 'Enter') {
+      if (isOpen && dropdownActiveIdx >= 0 && items[dropdownActiveIdx]) {
+        e.preventDefault();
+        items[dropdownActiveIdx].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        dropdownActiveIdx = -1;
+      } else {
+        doSort();
+      }
+    }
+  });
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') modalOverlay.classList.add('hidden');
   });

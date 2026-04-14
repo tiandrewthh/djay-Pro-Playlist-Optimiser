@@ -12,8 +12,10 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import datetime
 import json
+import logging
 import math
 import os
 import pickle
@@ -24,9 +26,12 @@ import struct
 import sqlite3
 import subprocess
 import sys
+import threading
 import uuid
 import warnings
 from urllib.parse import unquote
+
+logger = logging.getLogger(__name__)
 
 import librosa
 import numpy as np
@@ -175,7 +180,7 @@ def get_playlist_tracks(db, playlist_rowid):
         })
 
     if skip_reasons:
-        print(f"  Skipped {len(skip_reasons)} track(s): {', '.join(set(skip_reasons))}")
+        logger.warning('Skipped %d track(s): %s', len(skip_reasons), ', '.join(set(skip_reasons)))
 
     return tracks, skip_reasons
 
@@ -231,57 +236,84 @@ def extract_audio_features(path):
 
 def enrich_with_keys(tracks, progress_cb=None):
     cache = load_key_cache()
-    changed = False
-    enriched = []
-    skip_reasons = []
+    total = len(tracks)
+
+    # Split tracks into cache hits and those needing analysis
+    cached_entries = {}   # idx → cache entry dict
+    to_analyse = []       # list of (idx, track, mtime)
 
     for i, t in enumerate(tracks):
-        if progress_cb:
-            progress_cb((i + 1) / len(tracks), f'Analysing track {i + 1}/{len(tracks)}…')
         path = t['path']
         mtime = str(os.path.getmtime(path))
-
         entry = cache.get(path, {})
-        needs_analysis = (
+        needs = (
             entry.get('mtime') != mtime
             or 'spectral_flux' not in entry    # re-analyse old cache entries missing new fields
             or 'detected_bpm' not in entry     # re-analyse entries missing BPM fallback
         )
-
-        if not needs_analysis:
-            key           = entry['key']
-            mode          = entry['mode']
-            spectral_flux = entry['spectral_flux']
-            centroid      = entry['spectral_centroid']
-            onset_density = entry['onset_density']
-            detected_bpm  = entry['detected_bpm']
+        if needs:
+            to_analyse.append((i, t, mtime))
         else:
-            print(f"  [{i+1}/{len(tracks)}] Analysing: {t['name'][:50]}")
-            try:
-                key, mode, spectral_flux, centroid, onset_density, detected_bpm = extract_audio_features(path)
-            except Exception as e:
-                print(f"    Skipped ({e})")
-                skip_reasons.append(f"Analysis failed for {t['name']}: {e}")
-                continue
-            cache[path] = {
-                'mtime': mtime, 'key': key, 'mode': mode,
-                'spectral_flux': spectral_flux, 'spectral_centroid': centroid,
-                'onset_density': onset_density, 'detected_bpm': detected_bpm,
+            cached_entries[i] = entry
+
+    # Progress counter: cache hits are already "done"
+    done = [len(cached_entries)]
+    lock = threading.Lock()
+    new_cache_entries = {}  # path → entry (merged after all workers finish)
+    analysis_results = {}   # idx → (key, mode, flux, centroid, density, bpm)
+    failed = set()          # indices whose analysis failed
+
+    def _analyse(args):
+        idx, t, mtime = args
+        path = t['path']
+        logger.info('[%d/%d] Analysing: %s', idx + 1, total, t['name'][:50])
+        try:
+            feats = extract_audio_features(path)
+            analysis_results[idx] = feats
+            new_cache_entries[path] = {
+                'mtime': mtime, 'key': feats[0], 'mode': feats[1],
+                'spectral_flux': feats[2], 'spectral_centroid': feats[3],
+                'onset_density': feats[4], 'detected_bpm': feats[5],
             }
-            changed = True
+        except Exception as e:
+            logger.warning('Analysis failed for %s: %s', t['name'], e)
+            failed.add(idx)
+        finally:
+            with lock:
+                done[0] += 1
+                if progress_cb:
+                    progress_cb(done[0] / total, f'Analysing {done[0]}/{total}…')
+
+    # Parallelise I/O-bound audio loading across up to 4 threads
+    workers = min(4, len(to_analyse)) if to_analyse else 1
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        pool.map(_analyse, to_analyse)
+
+    if new_cache_entries:
+        cache.update(new_cache_entries)
+        save_key_cache(cache)
+
+    # Rebuild enriched list preserving original track order
+    enriched = []
+    for i, t in enumerate(tracks):
+        if i in failed:
+            continue
+        if i in cached_entries:
+            e = cached_entries[i]
+            key, mode = e['key'], e['mode']
+            spectral_flux, centroid = e['spectral_flux'], e['spectral_centroid']
+            onset_density, detected_bpm = e['onset_density'], e['detected_bpm']
+        else:
+            key, mode, spectral_flux, centroid, onset_density, detected_bpm = analysis_results[i]
 
         # Use djay Pro's BPM if available; fall back to librosa detection
         final_tempo = t['tempo'] or detected_bpm
-
         camelot = CAMELOT.get((key, mode), (0, '?'))
         enriched.append({
             **t, 'tempo': final_tempo, 'key': key, 'mode': mode, 'camelot': camelot,
             'spectral_flux': spectral_flux, 'spectral_centroid': centroid,
             'onset_density': onset_density,
         })
-
-    if changed:
-        save_key_cache(cache)
 
     return enriched
 
@@ -461,7 +493,7 @@ def build_training_data(db, feature_cache, use_recordings=True):
             if len(items) >= MIN_SESSION_TRACKS
         ]
 
-    print(f"  Training source: {source_label}")
+    logger.info('Training source: %s', source_label)
 
     X, y = [], []
 
@@ -503,44 +535,44 @@ def train_transition_model(db, feature_cache):
     Returns the trained model, or None if sklearn is unavailable or data is insufficient.
     """
     if not SKLEARN_AVAILABLE:
-        print("scikit-learn not installed — skipping ML model. Run: pip install scikit-learn")
+        logger.warning('scikit-learn not installed — skipping ML model. Run: pip install scikit-learn')
         return None
 
-    print("Building training data…")
+    logger.info('Building training data…')
     X, y = build_training_data(db, feature_cache)
 
     n_pos = int(y.sum())
     n_neg = int(len(y) - n_pos)
-    print(f"  {n_pos} positive pairs, {n_neg} negative pairs")
+    logger.info('%d positive pairs, %d negative pairs', n_pos, n_neg)
 
     MIN_PAIRS = 200
     MIN_AUC   = 0.65
 
     if len(X) < MIN_PAIRS:
-        print(f"  Not enough training data ({len(X)} pairs, need ≥{MIN_PAIRS}).")
-        print("  Run the sorter on more playlists to populate the feature cache, then retrain.")
+        logger.warning('Not enough training data (%d pairs, need ≥%d).', len(X), MIN_PAIRS)
+        logger.warning('Run the sorter on more playlists to populate the feature cache, then retrain.')
         return None
 
     model = RandomForestClassifier(n_estimators=200, max_depth=8, random_state=42, n_jobs=-1)
     scores = cross_val_score(model, X, y, cv=5, scoring='roc_auc')
     auc = scores.mean()
-    print(f"  Cross-val AUC: {auc:.3f} ± {scores.std():.3f}")
+    logger.info('Cross-val AUC: %.3f ± %.3f', auc, scores.std())
 
     if auc < MIN_AUC:
-        print(f"  AUC {auc:.3f} is below threshold ({MIN_AUC}) — model is not better than chance.")
-        print("  Sticking with heuristic cost function.")
+        logger.warning('AUC %.3f is below threshold (%.2f) — model is not better than chance.', auc, MIN_AUC)
+        logger.warning('Sticking with heuristic cost function.')
         return None
 
     model.fit(X, y)
 
     with open(MODEL_FILE, 'wb') as f:
         pickle.dump(model, f)
-    print(f"  Model saved → {MODEL_FILE}")
+    logger.info('Model saved → %s', MODEL_FILE)
 
     importances = model.feature_importances_
     feat_names = ['bpm_diff', 'key_dist', 'flux_diff', 'centroid_diff', 'onset_diff']
     for name, imp in sorted(zip(feat_names, importances), key=lambda x: -x[1]):
-        print(f"    {name:<16} {imp:.3f}")
+        logger.info('  %-16s %.3f', name, imp)
 
     return model
 
@@ -660,7 +692,7 @@ def simulated_annealing_sort(tracks, initial_order=None, cost_fn=None,
     if _matrix is not None:
         matrix = _matrix
     else:
-        print(f"  Precomputing {n}×{n} cost matrix…")
+        logger.info('Precomputing %d×%d cost matrix…', n, n)
         matrix = _build_cost_matrix(tracks, cost_fn)
 
     def _edge(a_idx, b_idx):
@@ -688,7 +720,7 @@ def simulated_annealing_sort(tracks, initial_order=None, cost_fn=None,
             iteration += 1
             if iteration % report_every == 0:
                 pct = iteration / total_iters * 100
-                print(f"  SA {pct:4.0f}%  T={T:.4f}  best cost={best_cost:.4f}")
+                logger.debug('SA %4.0f%%  T=%.4f  best cost=%.4f', pct, T, best_cost)
                 if progress_cb:
                     progress_cb(iteration / total_iters, f'SA {pct:.0f}%  cost={best_cost:.4f}')
 
