@@ -246,10 +246,11 @@
     /* ── Transition rows ── */
     .tr-row td {
       padding: 0 10px;
-      height: 18px;
+      height: 24px;
       border-bottom: none;
       font-size: 10px;
       color: var(--muted);
+      vertical-align: middle;
     }
     .tr-pill {
       display: inline-flex;
@@ -261,6 +262,17 @@
     .tr-good  { color: #22c55e; }
     .tr-ok    { color: #f59e0b; }
     .tr-clash { color: #ef4444; }
+
+    /* Visual Heatmap Bridge */
+    .transition-bridge {
+      height: 4px;
+      width: 40px;
+      border-radius: 2px;
+      display: inline-block;
+      margin-right: 8px;
+      vertical-align: middle;
+      transition: all 0.3s ease;
+    }
 
     /* energy pips */
     .pips { display: inline-flex; gap: 2px; vertical-align: middle; }
@@ -374,7 +386,11 @@
     .row-highlight {
       background: rgba(249, 115, 22, 0.15) !important;
       outline: 1px solid var(--accent);
-      transition: background 0.15s ease, outline 0.15s ease;
+      transform: scale(1.01);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 5;
+      position: relative;
+      transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
     }
 
     /* ── Error / warning banners ── */
@@ -1070,6 +1086,12 @@
         const next      = data.tracks[i + 1];
         const bpmDelta  = Math.abs(t.bpm - next.bpm);
         const dist      = camelotDist(t.camelot, next.camelot);
+        
+        // Color for the heatmap bridge
+        let bridgeColor = 'var(--green)';
+        if (dist > 2 || bpmDelta > 15) bridgeColor = 'var(--red)';
+        else if (dist > 1 || bpmDelta > 5) bridgeColor = '#f59e0b';
+
         const bpmColor  = bpmDelta > 20 ? '#ef4444' : bpmDelta > 10 ? '#f59e0b' : 'var(--border)';
         const keyClass  = dist <= 1 ? 'tr-good' : dist === 2 ? 'tr-ok' : 'tr-clash';
         const keySymbol = dist <= 1 ? '✓' : dist === 2 ? '~' : '✗';
@@ -1080,7 +1102,10 @@
           <td></td>
           <td colspan="2"></td>
           <td><span style="color:${bpmColor};font-family:var(--mono)">±${bpmDelta.toFixed(0)}</span></td>
-          <td><span class="tr-pill ${keyClass}">${keySymbol} ${esc(t.camelot)}→${esc(next.camelot)}</span></td>
+          <td>
+            <span class="transition-bridge" style="background:${bridgeColor}"></span>
+            <span class="tr-pill ${keyClass}">${keySymbol} ${esc(t.camelot)}→${esc(next.camelot)}</span>
+          </td>
           <td></td>
         `;
         fragment.appendChild(tt);
