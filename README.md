@@ -25,21 +25,6 @@ uvicorn api:app --reload
 
 Open [http://localhost:8000](http://localhost:8000).
 
-## Docker
-
-```bash
-docker build -t dj-optimiser .
-
-docker run -p 8000:8000 \
-  -v "$HOME/Music/djay:/root/Music/djay:ro" \
-  -v "$HOME/.dj_key_cache.json:/root/.dj_key_cache.json" \
-  dj-optimiser
-```
-
-The djay library volume is mounted read-only. The cache file volume is optional but recommended — without it, every audio file is re-analysed on each run.
-
-Open [http://localhost:8000](http://localhost:8000).
-
 ## Configuration
 
 | Setting | How to set |
