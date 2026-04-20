@@ -95,9 +95,13 @@ class Track(BaseModel):
 class SortRequest(BaseModel):
     playlist_id: int
     runs: int = Field(default=3, ge=1, le=20)
-    write: bool = False
-    output_name: Optional[str] = None
     max_bpm_jump: Optional[float] = None  # None = no limit
+
+
+class ExportRequest(BaseModel):
+    playlist_id: int
+    output_name: str
+    tracks: list[Track]
 
 
 class SortResponse(BaseModel):
@@ -125,8 +129,6 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
     try:
         db = open_djay_db(custom_path=app_config['db_path'])
         tracks, skip_reasons = get_playlist_tracks(db, req.playlist_id)
-        playlists = list_playlists(db)
-        pl_name = next((n for r, n, _ in playlists if r == req.playlist_id), 'Sorted')
     finally:
         if db:
             db.close()
@@ -203,11 +205,6 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
     else:
         key_clashes = 0
         avg_bpm_jump = max_bpm_jump = 0.0
-
-    if req.write:
-        cb(0.98, 'Writing to djay Pro…')
-        output_name = req.output_name or f'{pl_name} (Sorted)'
-        create_sorted_clone(req.playlist_id, best_sa, output_name)
 
     cb(1.0, 'Done!')
 
@@ -385,6 +382,64 @@ def sort_and_export_m3u(req: SortRequest):
         media_type='audio/x-mpegurl',
         headers={'Content-Disposition': 'attachment; filename="sorted_playlist.m3u"'},
     )
+
+
+@app.post('/export')
+def export_to_djay(req: ExportRequest):
+    """Writes a previously sorted tracklist as a new playlist into djay Pro."""
+    try:
+        # Convert the Track objects back to the internal format expected by create_sorted_clone
+        # Internal format: {'name': str, 'artist': str, 'path': str, 'tempo': float, '_rowid': int, ...}
+        # Note: We can't recover _rowid from the Track model, so we must re-query the DB 
+        # to match paths to rowids for the specific playlist.
+        db = open_djay_db(custom_path=app_config['db_path'])
+        try:
+            # Map paths to rowids for tracks in the original playlist
+            rows = db.execute('''
+                SELECT r_media.dst, database2.data
+                FROM relationship_relationship r_item
+                JOIN relationship_relationship r_media
+                    ON r_media.src = r_item.src
+                    AND r_media.name = "mediaItemPlaylistItemMediaItem"
+                JOIN database2
+                    ON database2.rowid = r_media.dst
+                WHERE r_item.name = "mediaItemPlaylistItemPlaylist"
+                  AND r_item.dst = ?
+            ''', (req.playlist_id,)).fetchall()
+            
+            path_to_rowid = {}
+            for rowid, data in rows:
+                urls = re.findall(b'file:///[^\x00\x0a]+', data)
+                if urls:
+                    path = unquote(urls[0].decode().replace('file://', ''))
+                    path_to_rowid[path] = rowid
+        finally:
+            db.close()
+
+        sorted_internal = []
+        for t in req.tracks:
+            rowid = path_to_rowid.get(t.path)
+            if rowid is not None:
+                sorted_internal.append({
+                    'name': t.name,
+                    'artist': t.artist,
+                    'path': t.path,
+                    'tempo': t.bpm,
+                    '_rowid': rowid,
+                })
+        
+        if not sorted_internal:
+            raise ValueError("No valid tracks from the sorted list could be found in the original playlist.")
+
+        create_sorted_clone(req.playlist_id, sorted_internal, req.output_name)
+        return {'status': 'success', 'message': f"Playlist '{req.output_name}' created."}
+
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 _MAX_CONCURRENT_JOBS = 3

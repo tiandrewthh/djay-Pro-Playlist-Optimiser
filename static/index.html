@@ -420,24 +420,6 @@
     }
     @media (max-width: 600px) { .controls-grid { grid-template-columns: 1fr; } }
 
-    .destination-section {
-      border-top: 1px solid var(--border);
-      padding-top: 18px;
-      margin-top: 4px;
-    }
-
-    .conditional-field {
-      max-height: 0;
-      overflow: hidden;
-      opacity: 0;
-      transition: max-height .3s ease, opacity .3s ease, margin .3s ease;
-    }
-    .conditional-field.visible {
-      max-height: 100px;
-      opacity: 1;
-      margin-top: 14px;
-    }
-
     .slider-container {
       display: flex;
       align-items: center;
@@ -461,12 +443,6 @@
       to   { opacity: 1; transform: translateY(0); }
     }
     .reveal { animation: slideIn 0.35s ease-out forwards; }
-
-    /* ── Write-mode sort button ── */
-    .btn-warning {
-      border: 1px solid var(--accent) !important;
-      box-shadow: 0 0 0 3px var(--accent-dim);
-    }
 
     /* ── Stats value colour variants ── */
     .value.amber { color: #f59e0b; }
@@ -618,20 +594,6 @@
       </div>
     </div>
 
-    <!-- Tier 3: Destination -->
-    <div class="destination-section">
-      <label class="checkbox-label">
-        <input type="checkbox" id="chk-write">
-        Write results to djay Pro
-      </label>
-      <div id="write-options" class="conditional-field">
-        <div class="field">
-          <label>Output playlist name</label>
-          <input type="text" id="inp-name" placeholder="e.g. Mix 4 (Sorted)">
-        </div>
-      </div>
-    </div>
-
     <div class="btn-row">
       <button class="btn-primary" id="btn-sort">Sort Playlist</button>
     </div>
@@ -690,6 +652,7 @@
       <div style="display:flex;gap:8px">
         <button class="btn-copy" id="btn-copy-list">Copy text list</button>
         <button class="btn-copy hidden" id="btn-m3u">Download M3U</button>
+        <button class="btn-primary hidden" id="btn-export-djay" style="padding: 4px 12px; font-size: 11px;">Export to djay Pro</button>
       </div>
     </div>
     <div class="warning hidden" id="warning-box" style="margin-bottom:14px"></div>
@@ -725,6 +688,12 @@
   <div class="modal" role="dialog" aria-modal="true">
     <h2 id="modal-title"></h2>
     <p id="modal-message"></p>
+    <div id="modal-input-wrap" class="hidden" style="margin-bottom: 22px;">
+       <div class="field">
+         <label>Output playlist name</label>
+         <input type="text" id="modal-inp-name">
+       </div>
+    </div>
     <div class="modal-btns">
       <button class="btn-secondary" id="modal-cancel">Cancel</button>
       <button class="btn-primary"   id="modal-confirm">Confirm</button>
@@ -736,16 +705,15 @@
   const dot           = document.getElementById('dot');
   const selPl         = document.getElementById('sel-playlist');
   const plDropdown    = document.getElementById('playlist-dropdown');
-  const inpName       = document.getElementById('inp-name');
   const inpRuns       = document.getElementById('inp-runs');
   const inpMaxBpm     = document.getElementById('inp-max-bpm');
   const inpDbPath     = document.getElementById('inp-db-path');
   const btnSavePath   = document.getElementById('btn-save-path');
   const pathStatus    = document.getElementById('path-status');
   const bpmJumpVal    = document.getElementById('bpm-jump-val');
-  const chkWrite      = document.getElementById('chk-write');
   const btnSort       = document.getElementById('btn-sort');
   const btnM3u        = document.getElementById('btn-m3u');
+  const btnExportDjay = document.getElementById('btn-export-djay');
   const errBox        = document.getElementById('error-box');
   const resultsSummaryCard = document.getElementById('results-summary-card');
   const resultsCard        = document.getElementById('results-card');
@@ -806,9 +774,9 @@
 
   function clearErr() { errBox.classList.add('hidden'); }
 
-  function setLoading(on) {
+  function setLoading(on, text = 'Sort Playlist') {
     btnSort.disabled = on;
-    btnSort.innerHTML = on ? '<span class="spinner"></span>Sorting…' : 'Sort Playlist';
+    btnSort.innerHTML = on ? '<span class="spinner"></span>' + text : 'Sort Playlist';
   }
 
   function setProgress(fraction, message) {
@@ -818,9 +786,20 @@
 
   // ── Modal ──────────────────────────────────────────────────────────────────
 
-  function showConfirm(title, message, onConfirm) {
+  function showConfirm(title, message, onConfirm, showInput = false) {
     document.getElementById('modal-title').textContent   = title;
     document.getElementById('modal-message').textContent = message;
+    
+    const inputWrap = document.getElementById('modal-input-wrap');
+    const nameInp   = document.getElementById('modal-inp-name');
+    
+    if (showInput) {
+      inputWrap.classList.remove('hidden');
+      nameInp.value = ''; // reset or set default elsewhere
+    } else {
+      inputWrap.classList.add('hidden');
+    }
+
     modalOverlay.classList.remove('hidden');
 
     const confirmBtn = document.getElementById('modal-confirm');
@@ -831,7 +810,11 @@
       confirmBtn.removeEventListener('click', handleConfirm);
       cancelBtn.removeEventListener('click',  handleCancel);
     }
-    function handleConfirm() { cleanup(); onConfirm(); }
+    function handleConfirm() { 
+      const finalName = showInput ? nameInp.value.trim() : null;
+      cleanup(); 
+      onConfirm(finalName); 
+    }
     function handleCancel()  { cleanup(); }
 
     confirmBtn.addEventListener('click', handleConfirm);
@@ -854,7 +837,6 @@
         e.preventDefault();
         selPl.value      = p.name;
         selPl.dataset.id = p.id;
-        inpName.value    = `${p.name} (Sorted)`;
         plDropdown.classList.add('hidden');
       };
       plDropdown.appendChild(item);
@@ -881,7 +863,7 @@
     progressWrap.classList.remove('hidden');
     setProgress(0, 'Starting…');
     document.getElementById('etr-text').textContent = '';
-    setLoading(true);
+    setLoading(true, 'Sorting…');
 
     try {
       // Start the background job
@@ -891,8 +873,6 @@
         body: JSON.stringify({
           playlist_id:  playlistId,
           runs:         parseInt(inpRuns.value) || 3,
-          write:        chkWrite.checked,
-          output_name:  inpName.value.trim() || null,
           max_bpm_jump: parseInt(inpMaxBpm.value) < 21 ? parseInt(inpMaxBpm.value) : null,
         }),
       });
@@ -955,24 +935,60 @@
     clearErr();
     const playlistId = selPl.dataset.id ? parseInt(selPl.dataset.id) : null;
     if (!playlistId) { showErr('Please select a playlist from the dropdown.'); return; }
-    const playlistName = selPl.value.trim();
-
-    // Wipe stale results immediately — before modal or network call
+    
+    // Wipe stale results immediately
     resultsSummaryCard.classList.add('hidden');
     resultsCard.classList.add('hidden');
     btnM3u.classList.add('hidden');
+    btnExportDjay.classList.add('hidden');
     sortStartTime = Date.now();
 
-    if (chkWrite.checked) {
-      const outputName = inpName.value.trim() || `${playlistName} (Sorted)`;
-      showConfirm(
-        'Write to djay Pro?',
-        `This will create a new playlist named "${outputName}" in djay Pro. If you've sorted this playlist before, a duplicate will be created. Make sure djay Pro is closed before continuing.`,
-        () => executeSort(playlistId),
-      );
-    } else {
-      executeSort(playlistId);
-    }
+    executeSort(playlistId);
+  }
+
+  async function doExport() {
+    if (!lastResult) return;
+    const playlistId = selPl.dataset.id ? parseInt(selPl.dataset.id) : null;
+    const playlistName = selPl.value.trim() || 'Sorted';
+    const defaultName = `${playlistName} (Sorted)`;
+
+    showConfirm(
+      'Export to djay Pro?',
+      `This will create a new playlist in djay Pro. Make sure djay Pro is closed before continuing.`,
+      async (finalName) => {
+        const name = finalName || defaultName;
+        
+        // UI state
+        const originalText = btnExportDjay.textContent;
+        btnExportDjay.disabled = true;
+        btnExportDjay.innerHTML = '<span class="spinner"></span> Exporting…';
+
+        try {
+          const res = await fetch('/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              playlist_id: playlistId,
+              output_name: name,
+              tracks: lastResult.tracks,
+            }),
+          });
+
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.detail || 'Export failed');
+          }
+
+          alert(`Successfully exported as "${name}"!`);
+        } catch (e) {
+          showErr('Export failed: ' + e.message);
+        } finally {
+          btnExportDjay.disabled = false;
+          btnExportDjay.textContent = originalText;
+        }
+      },
+      true // show input
+    );
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1084,6 +1100,7 @@
     // ── Reveal tracklist card ────────────────────────────────────────────────
     revealCard(resultsCard);
     btnM3u.classList.remove('hidden');
+    btnExportDjay.classList.remove('hidden');
     resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -1345,6 +1362,7 @@
 
   btnSort.addEventListener('click', doSort);
   btnM3u.addEventListener('click', doM3u);
+  btnExportDjay.addEventListener('click', doExport);
 
   selPl.addEventListener('focus', () => {
     const term = selPl.value.trim().toLowerCase();
@@ -1354,7 +1372,6 @@
 
   selPl.addEventListener('input', () => {
     delete selPl.dataset.id;
-    inpName.value = '';
     const term = selPl.value.trim().toLowerCase();
     renderDropdown(term ? allPlaylists.filter(p => p.name.toLowerCase().includes(term)) : allPlaylists);
     plDropdown.classList.remove('hidden');
@@ -1429,11 +1446,6 @@
   }
   setupSlider('inp-runs',    'runs-val',    null);
   setupSlider('inp-max-bpm', 'bpm-jump-val', v => parseInt(v) >= 21 ? '∞' : v);
-
-  chkWrite.addEventListener('change', () => {
-    document.getElementById('write-options').classList.toggle('visible', chkWrite.checked);
-    btnSort.classList.toggle('btn-warning', chkWrite.checked);
-  });
 
   // ── Dropdown keyboard navigation ───────────────────────────────────────────
   let dropdownActiveIdx = -1;
