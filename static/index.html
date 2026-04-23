@@ -497,6 +497,29 @@
     /* ── Waves background ── */
     #waves-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
     header, main, footer, .app-loader, .modal-overlay { position: relative; z-index: 1; }
+
+    /* ── Warning Details ── */
+    .warning-details {
+      margin-top: 10px;
+      font-size: 12px;
+      border-top: 1px solid rgba(234,179,8,0.2);
+      padding-top: 10px;
+      color: #fde68a;
+    }
+    .warning-group { margin-bottom: 8px; }
+    .warning-group-title { font-weight: 600; font-size: 11px; text-transform: uppercase; opacity: 0.8; }
+    .warning-tracks { font-family: var(--mono); opacity: 0.9; margin-left: 8px; }
+    .btn-text-link {
+      background: none;
+      border: none;
+      color: inherit;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 0;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 8px;
+    }
   </style>
 </head>
 <body>
@@ -1002,9 +1025,37 @@
 
     // ── Warning & header ────────────────────────────────────────────────────
     const warnBox = document.getElementById('warning-box');
-    if (data.skipped_message) {
-      warnBox.textContent = data.skipped_message;
+    if (data.skipped_tracks && data.skipped_tracks.length > 0) {
       warnBox.classList.remove('hidden');
+      
+      let totalSkipped = 0;
+      data.skipped_tracks.forEach(group => totalSkipped += group.tracks.length);
+      
+      // Create high-level summary
+      const summaryText = `${totalSkipped} track${totalSkipped !== 1 ? 's' : ''} were skipped due to unsupported formats or missing files.`;
+      
+      warnBox.innerHTML = `
+        <div style="display:flex; align-items:center; justify-content:space-between">
+          <span>${summaryText}</span>
+          <button class="btn-text-link" id="btn-toggle-warn-details">Show details</button>
+        </div>
+        <div class="warning-details hidden" id="warn-details-box">
+          ${data.skipped_tracks.map(group => `
+            <div class="warning-group">
+              <div class="warning-group-title">${esc(group.reason)}</div>
+              <div class="warning-tracks">${group.tracks.map(t => `"${esc(t)}"`).join(', ')}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      
+      document.getElementById('btn-toggle-warn-details').onclick = () => {
+        const details = document.getElementById('warn-details-box');
+        const btn = document.getElementById('btn-toggle-warn-details');
+        const isHidden = details.classList.toggle('hidden');
+        btn.textContent = isHidden ? 'Show details' : 'Hide details';
+      };
+
     } else {
       warnBox.classList.add('hidden');
     }

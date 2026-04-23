@@ -106,6 +106,11 @@ class ExportRequest(BaseModel):
     tracks: list[Track]
 
 
+class SkipDetail(BaseModel):
+    reason: str
+    tracks: list[str]
+
+
 class SortResponse(BaseModel):
     tracks: list[Track]
     greedy_cost: float
@@ -115,7 +120,7 @@ class SortResponse(BaseModel):
     avg_bpm_jump: float
     max_bpm_jump: float
     key_clashes: int
-    skipped_message: Optional[str]
+    skipped_tracks: Optional[list[SkipDetail]]
 
 
 # ---------------------------------------------------------------------------
@@ -141,28 +146,19 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
     if len(tracks) < 2:
         raise ValueError('Playlist must contain at least 2 tracks to be sorted.')
 
+    skipped_data = None
     if skip_reasons:
-        # Group skips by reason for a cleaner message
+        # Group skips by reason
         reasons_map = {}
         for label, reason in skip_reasons:
             # Clean up reason text (e.g., "unsupported format (.wav)" -> "unsupported format")
             clean_reason = reason.split(' (')[0]
             reasons_map.setdefault(clean_reason, []).append(label)
         
-        summary_parts = []
-        for reason, labels in reasons_map.items():
-            count = len(labels)
-            count_str = "track" if count == 1 else "tracks"
-            # List first few tracks if the list is short, otherwise just the count
-            if count <= 3:
-                track_list = ", ".join([f'"{l}"' for l in labels])
-                summary_parts.append(f"{count} {count_str} skipped ({reason}): {track_list}")
-            else:
-                summary_parts.append(f"{count} {count_str} skipped due to {reason}")
-        
-        skipped_msg = " ".join(summary_parts)
-    else:
-        skipped_msg = None
+        skipped_data = [
+            {'reason': reason, 'tracks': labels} 
+            for reason, labels in reasons_map.items()
+        ]
 
     cb(0.05, f'Analysing {len(tracks)} tracks…')
     enriched = enrich_with_keys(
@@ -246,7 +242,7 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
         'avg_bpm_jump': avg_bpm_jump,
         'max_bpm_jump': max_bpm_jump,
         'key_clashes': key_clashes,
-        'skipped_message': skipped_msg,
+        'skipped_tracks': skipped_data,
     }
 
 
