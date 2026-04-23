@@ -142,10 +142,25 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
         raise ValueError('Playlist must contain at least 2 tracks to be sorted.')
 
     if skip_reasons:
-        n = len(skip_reasons)
-        header = f"{n} track{'s' if n > 1 else ''} skipped: "
-        parts = [f'"{label}" ({reason})' for label, reason in skip_reasons]
-        skipped_msg = header + "; ".join(parts)
+        # Group skips by reason for a cleaner message
+        reasons_map = {}
+        for label, reason in skip_reasons:
+            # Clean up reason text (e.g., "unsupported format (.wav)" -> "unsupported format")
+            clean_reason = reason.split(' (')[0]
+            reasons_map.setdefault(clean_reason, []).append(label)
+        
+        summary_parts = []
+        for reason, labels in reasons_map.items():
+            count = len(labels)
+            count_str = "track" if count == 1 else "tracks"
+            # List first few tracks if the list is short, otherwise just the count
+            if count <= 3:
+                track_list = ", ".join([f'"{l}"' for l in labels])
+                summary_parts.append(f"{count} {count_str} skipped ({reason}): {track_list}")
+            else:
+                summary_parts.append(f"{count} {count_str} skipped due to {reason}")
+        
+        skipped_msg = " ".join(summary_parts)
     else:
         skipped_msg = None
 
