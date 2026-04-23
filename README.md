@@ -13,7 +13,7 @@ Audio analysis requires `ffmpeg` for MP3/M4A/AAC files. On macOS: `brew install 
 ## Quick start
 
 ```bash
-git clone <repo>
+git clone https://github.com/tiandrewthh/DJ-Playlist-Optimiser
 cd "DJ Playlist Optimiser"
 
 python3 -m venv venv

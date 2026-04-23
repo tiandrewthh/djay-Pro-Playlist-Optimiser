@@ -22,3 +22,12 @@ venv/
 .vscode/
 .idea/
 *.swp
+
+# Build output
+.dist/
+
+# Generated playlists
+*.m3u
+
+# Claude Code
+.claude/

@@ -390,33 +390,13 @@ def sort_and_export_m3u(req: SortRequest):
 def export_to_djay(req: ExportRequest):
     """Writes a previously sorted tracklist as a new playlist into djay Pro."""
     try:
-        # Convert the Track objects back to the internal format expected by create_sorted_clone
-        # Internal format: {'name': str, 'artist': str, 'path': str, 'tempo': float, '_rowid': int, ...}
-        # Note: We can't recover _rowid from the Track model, so we must re-query the DB 
-        # to match paths to rowids for the specific playlist.
         db = open_djay_db(custom_path=app_config['db_path'])
         try:
-            # Map paths to rowids for tracks in the original playlist
-            rows = db.execute('''
-                SELECT r_media.dst, database2.data
-                FROM relationship_relationship r_item
-                JOIN relationship_relationship r_media
-                    ON r_media.src = r_item.src
-                    AND r_media.name = "mediaItemPlaylistItemMediaItem"
-                JOIN database2
-                    ON database2.rowid = r_media.dst
-                WHERE r_item.name = "mediaItemPlaylistItemPlaylist"
-                  AND r_item.dst = ?
-            ''', (req.playlist_id,)).fetchall()
-            
-            path_to_rowid = {}
-            for rowid, data in rows:
-                urls = re.findall(b'file:///[^\x00\x0a]+', data)
-                if urls:
-                    path = unquote(urls[0].decode().replace('file://', ''))
-                    path_to_rowid[path] = rowid
+            playlist_tracks, _ = get_playlist_tracks(db, req.playlist_id)
         finally:
             db.close()
+
+        path_to_rowid = {t['path']: t['_rowid'] for t in playlist_tracks}
 
         sorted_internal = []
         for t in req.tracks:
@@ -429,7 +409,7 @@ def export_to_djay(req: ExportRequest):
                     'tempo': t.bpm,
                     '_rowid': rowid,
                 })
-        
+
         if not sorted_internal:
             raise ValueError("No valid tracks from the sorted list could be found in the original playlist.")
 

@@ -24,8 +24,7 @@
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: radial-gradient(ellipse at top center, #1a1a22 0%, #0a0a0b 65%);
-      background-attachment: fixed;
+      background: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 14px;
@@ -39,9 +38,7 @@
       gap: 10px;
       padding: 14px 28px;
       border-bottom: 1px solid var(--border);
-      background: rgba(10, 10, 11, 0.8);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: var(--bg);
       position: sticky;
       top: 0;
       z-index: 10;
@@ -67,13 +64,10 @@
     /* ── Card ── */
     .card {
       background: var(--surface);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 24px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-      transition: border-color .2s ease, box-shadow .2s ease;
     }
 
     #results-summary-card:hover,
@@ -103,7 +97,6 @@
       font-size: 13px;
       width: 100%;
       outline: none;
-      transition: border-color .15s;
     }
     select:focus, input:focus { border-color: var(--accent); }
 
@@ -165,7 +158,6 @@
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      transition: opacity .15s, background .15s, transform .15s, box-shadow .15s;
       display: inline-flex;
       align-items: center;
       gap: 7px;
@@ -180,7 +172,6 @@
       box-shadow: 0 4px 12px var(--accent-glow);
     }
     .btn-primary:hover:not(:disabled) {
-      transform: scale(1.02);
       box-shadow: 0 6px 18px var(--accent-glow);
     }
     .btn-secondary {
@@ -223,9 +214,7 @@
     thead th {
       position: sticky;
       top: 0;
-      background: rgba(22, 22, 26, 0.95);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      background: var(--surface);
       z-index: 2;
       box-shadow: 0 1px 0 var(--border);
       border-bottom: none;
@@ -236,7 +225,6 @@
       font-family: var(--mono);
       font-size: 12px;
       white-space: nowrap;
-      transition: background .12s ease, color .12s ease;
     }
     td.wrap { font-family: inherit; white-space: normal; }
     tr:last-child td { border-bottom: none; }
@@ -289,7 +277,6 @@
       background: var(--accent);
       border-radius: 2px;
       width: 0%;
-      transition: width 0.4s ease;
     }
 
     /* ── Camelot badge ── */
@@ -308,20 +295,8 @@
       border: 2px solid rgba(255,255,255,.2);
       border-top-color: #fff;
       border-radius: 50%;
-      animation: spin .55s linear infinite;
       flex-shrink: 0;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Ambient background glow ── */
-    #fluid-bg {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      z-index: 0;
-      pointer-events: none;
-    }
-    header, main, footer, .app-loader, .modal-overlay { position: relative; z-index: 1; }
 
     /* ── Custom Combobox ── */
     .combobox-container { position: relative; width: 100%; }
@@ -345,7 +320,6 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      transition: background 0.12s ease;
     }
     .dropdown-item:hover, .dropdown-item.active {
       background: var(--accent);
@@ -368,7 +342,6 @@
       outline: 1px solid var(--accent);
       z-index: 5;
       position: relative;
-      transition: background 0.15s ease;
     }
 
     /* ── Error / warning banners ── */
@@ -437,13 +410,6 @@
       flex-shrink: 0;
     }
 
-    /* ── Animated card reveals ── */
-    @keyframes slideIn {
-      from { opacity: 0; transform: translateY(16px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .reveal { animation: slideIn 0.35s ease-out forwards; }
-
     /* ── Stats value colour variants ── */
     .value.amber { color: #f59e0b; }
 
@@ -500,7 +466,6 @@
       cursor: pointer;
       text-decoration: underline;
       opacity: 0.6;
-      transition: opacity .2s, color .2s;
     }
     .config-link:hover { opacity: 1; color: var(--text); }
 
@@ -520,21 +485,25 @@
       align-items: center; justify-content: center;
       gap: 16px;
       z-index: 200;
-      transition: opacity .25s;
     }
     .app-loader .loader-ring {
       width: 36px; height: 36px;
       border: 3px solid rgba(249,115,22,0.2);
       border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin .7s linear infinite;
     }
     .app-loader p { font-size: 13px; color: var(--muted); }
+
+    /* ── Waves background ── */
+    #waves-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    header, main, footer, .app-loader, .modal-overlay { position: relative; z-index: 1; }
   </style>
 </head>
 <body>
 
-<canvas id="fluid-bg" aria-hidden="true"></canvas>
+<div id="waves-bg" aria-hidden="true">
+  <svg id="waves-svg"></svg>
+</div>
 
 <!-- Loading overlay — hidden once playlists load -->
 <div class="app-loader" id="app-loader">
@@ -705,6 +674,19 @@
   const dot           = document.getElementById('dot');
   const selPl         = document.getElementById('sel-playlist');
   const plDropdown    = document.getElementById('playlist-dropdown');
+
+  // Portal the dropdown to body so it escapes backdrop-filter stacking contexts
+  document.body.appendChild(plDropdown);
+  Object.assign(plDropdown.style, { position: 'absolute', zIndex: '9999' });
+
+  function positionDropdown() {
+    const r = selPl.getBoundingClientRect();
+    plDropdown.style.top   = (window.scrollY + r.bottom + 2) + 'px';
+    plDropdown.style.left  = (window.scrollX + r.left) + 'px';
+    plDropdown.style.width = r.width + 'px';
+  }
+  function showDropdown() { positionDropdown(); plDropdown.classList.remove('hidden'); }
+  function hideDropdown() { plDropdown.classList.add('hidden'); dropdownActiveIdx = -1; }
   const inpRuns       = document.getElementById('inp-runs');
   const inpMaxBpm     = document.getElementById('inp-max-bpm');
   const inpDbPath     = document.getElementById('inp-db-path');
@@ -837,7 +819,7 @@
         e.preventDefault();
         selPl.value      = p.name;
         selPl.dataset.id = p.id;
-        plDropdown.classList.add('hidden');
+        hideDropdown();
       };
       plDropdown.appendChild(item);
     });
@@ -995,26 +977,12 @@
 
   function revealCard(el) {
     el.classList.remove('hidden');
-    el.classList.remove('reveal');
-    void el.offsetWidth; // force reflow so animation re-triggers
-    el.classList.add('reveal');
-    el.addEventListener('animationend', () => el.classList.remove('reveal'), { once: true });
   }
 
   function animateValue(id, start, end, duration, suffix = '', prefix = '') {
     const el = document.getElementById(id);
     if (!el) return;
-    let startTs = null;
-    const step = ts => {
-      if (!startTs) startTs = ts;
-      const p = Math.min((ts - startTs) / duration, 1);
-      const eased = 1 - Math.pow(1 - p, 3);
-      const cur = start + (end - start) * eased;
-      el.textContent = `${prefix}${Number.isInteger(end) ? Math.round(cur) : cur.toFixed(1)}${suffix}`;
-      if (p < 1) requestAnimationFrame(step);
-      else el.textContent = `${prefix}${end}${suffix}`;
-    };
-    requestAnimationFrame(step);
+    el.textContent = `${prefix}${Number.isInteger(end) ? end : end.toFixed(1)}${suffix}`;
   }
 
   function renderResults(data) {
@@ -1101,7 +1069,7 @@
     revealCard(resultsCard);
     btnM3u.classList.remove('hidden');
     btnExportDjay.classList.remove('hidden');
-    resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    resultsCard.scrollIntoView({ block: 'start' });
   }
 
   // ── M3U download (built client-side from last result) ──────────────────────
@@ -1288,76 +1256,6 @@
 
   window.addEventListener('resize', () => { if (_chartTracks.length) drawChart(_chartTracks); });
 
-  // ── Zen pond ripple engine ────────────────────────────────────────────────
-  {
-    const fluidCanvas = document.getElementById('fluid-bg');
-    const fluidCtx    = fluidCanvas.getContext('2d');
-    let   fluidW = 0, fluidH = 0;
-
-    const ripples        = [];
-    const MAX_RIPPLES    = 60;
-    let   lastMouseSpawn = 0;
-
-    function spawnRipple(x, y, speed, decay, baseAlpha, lineWidth) {
-      if (ripples.length >= MAX_RIPPLES) ripples.shift();
-      ripples.push({ x, y, r: 0, speed, decay, baseAlpha, lineWidth, life: 1.0 });
-    }
-
-    function dropStone(x, y) {
-      spawnRipple(x, y, 4.0, 0.013, 0.70, 2.0);
-      setTimeout(() => spawnRipple(x, y, 3.0, 0.010, 0.50, 1.5),  90);
-      setTimeout(() => spawnRipple(x, y, 2.2, 0.007, 0.35, 1.0), 200);
-    }
-
-    function fluidResize() {
-      const dpr = window.devicePixelRatio || 1;
-      fluidW = window.innerWidth;
-      fluidH = window.innerHeight;
-      fluidCanvas.width  = fluidW * dpr;
-      fluidCanvas.height = fluidH * dpr;
-      fluidCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-
-    function fluidAnimate() {
-      fluidCtx.fillStyle = '#050506';
-      fluidCtx.fillRect(0, 0, fluidW, fluidH);
-
-      for (let i = ripples.length - 1; i >= 0; i--) {
-        const rp = ripples[i];
-        rp.r    += rp.speed * rp.life;
-        rp.life -= rp.decay;
-
-        if (rp.life <= 0) { ripples.splice(i, 1); continue; }
-
-        const fadeIn  = Math.min(rp.r / 15, 1);
-        const opacity = rp.baseAlpha * rp.life * fadeIn;
-        const lw = Math.max(0.3, rp.lineWidth * rp.life);
-
-        fluidCtx.beginPath();
-        fluidCtx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2);
-        fluidCtx.strokeStyle = `rgba(249, 115, 22, ${opacity.toFixed(3)})`;
-        fluidCtx.lineWidth   = lw;
-        fluidCtx.stroke();
-      }
-
-      requestAnimationFrame(fluidAnimate);
-    }
-
-    window.addEventListener('mousemove', e => {
-      const now = Date.now();
-      if (now - lastMouseSpawn > 80) {
-        lastMouseSpawn = now;
-        spawnRipple(e.clientX, e.clientY, 3.0, 0.012, 0.55, 1.5);
-      }
-    });
-
-    window.addEventListener('mousedown', e => dropStone(e.clientX, e.clientY));
-    window.addEventListener('resize', fluidResize);
-
-    fluidResize();
-    fluidAnimate();
-  }
-
   // ── Wire up ────────────────────────────────────────────────────────────────
 
   btnSort.addEventListener('click', doSort);
@@ -1367,21 +1265,24 @@
   selPl.addEventListener('focus', () => {
     const term = selPl.value.trim().toLowerCase();
     renderDropdown(term ? allPlaylists.filter(p => p.name.toLowerCase().includes(term)) : allPlaylists);
-    plDropdown.classList.remove('hidden');
+    showDropdown();
+  });
+
+  selPl.addEventListener('blur', () => {
+    hideDropdown();
   });
 
   selPl.addEventListener('input', () => {
     delete selPl.dataset.id;
     const term = selPl.value.trim().toLowerCase();
     renderDropdown(term ? allPlaylists.filter(p => p.name.toLowerCase().includes(term)) : allPlaylists);
-    plDropdown.classList.remove('hidden');
+    showDropdown();
     dropdownActiveIdx = -1;
   });
 
   window.addEventListener('click', e => {
-    if (!e.target.closest('.combobox-container')) {
-      plDropdown.classList.add('hidden');
-      dropdownActiveIdx = -1;
+    if (!e.target.closest('.combobox-container') && !plDropdown.contains(e.target)) {
+      hideDropdown();
     }
   });
 
@@ -1470,7 +1371,7 @@
       if (!isOpen) {
         const term = selPl.value.trim().toLowerCase();
         renderDropdown(term ? allPlaylists.filter(p => p.name.toLowerCase().includes(term)) : allPlaylists);
-        plDropdown.classList.remove('hidden');
+        showDropdown();
         setDropdownActive(0);
       } else {
         setDropdownActive(Math.min(dropdownActiveIdx + 1, items.length - 1));
@@ -1479,12 +1380,12 @@
       e.preventDefault();
       if (isOpen) setDropdownActive(Math.max(dropdownActiveIdx - 1, 0));
     } else if (e.key === 'Escape') {
-      plDropdown.classList.add('hidden');
-      dropdownActiveIdx = -1;
+      hideDropdown();
     } else if (e.key === 'Enter') {
-      if (isOpen && dropdownActiveIdx >= 0 && items[dropdownActiveIdx]) {
+      if (isOpen && items.length > 0) {
         e.preventDefault();
-        items[dropdownActiveIdx].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        const target = dropdownActiveIdx >= 0 ? items[dropdownActiveIdx] : items[0];
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         dropdownActiveIdx = -1;
       } else {
         doSort();
@@ -1510,11 +1411,106 @@
   document.getElementById('btn-show-config').addEventListener('click', () => {
     const card = document.getElementById('library-config-card');
     card.classList.remove('hidden');
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    card.scrollIntoView({ block: 'start' });
   });
 
   loadConfig();
   loadPlaylists();
+
+  // ── Waves background (adapted from wodniack.dev) ───────────────────────────
+  {
+    class Vec { constructor(x,y,z){this.x=x;this.y=y;this.z=z;} dot2(x,y){return this.x*x+this.y*y;} }
+
+    class Perlin {
+      constructor(seed=0){
+        this.grad3=[new Vec(1,1,0),new Vec(-1,1,0),new Vec(1,-1,0),new Vec(-1,-1,0),new Vec(1,0,1),new Vec(-1,0,1),new Vec(1,0,-1),new Vec(-1,0,-1),new Vec(0,1,1),new Vec(0,-1,1),new Vec(0,1,-1),new Vec(0,-1,-1)];
+        this.p=[151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+        this.perm=new Array(512); this.gradP=new Array(512); this.seed(seed);
+      }
+      seed(t){if(t>0&&t<1)t*=65536;t=Math.floor(t);if(t<256)t|=t<<8;for(let e=0;e<256;e++){let i=e&1?this.p[e]^t&255:this.p[e]^t>>8&255;this.perm[e]=this.perm[e+256]=i;this.gradP[e]=this.gradP[e+256]=this.grad3[i%12];}}
+      fade(t){return t*t*t*(t*(t*6-15)+10);}
+      lerp(t,e,i){return(1-i)*t+i*e;}
+      perlin2(t,e){let i=Math.floor(t),s=Math.floor(e);t-=i;e-=s;i&=255;s&=255;const r=this.gradP[i+this.perm[s]].dot2(t,e),n=this.gradP[i+this.perm[s+1]].dot2(t,e-1),o=this.gradP[i+1+this.perm[s]].dot2(t-1,e),a=this.gradP[i+1+this.perm[s+1]].dot2(t-1,e-1),l=this.fade(t);return this.lerp(this.lerp(r,o,l),this.lerp(n,a,l),this.fade(e));}
+    }
+
+    const wSvg   = document.getElementById('waves-svg');
+    const wMouse = { x:-10, y:0, lx:0, ly:0, sx:0, sy:0, v:0, vs:0, a:0, set:false };
+    const wNoise = new Perlin(Math.random());
+    let wLines = [], wPaths = [], wW = 0, wH = 0;
+
+    function wSetSize() {
+      wW = window.innerWidth; wH = window.innerHeight;
+      wSvg.style.width = wW + 'px'; wSvg.style.height = wH + 'px';
+    }
+
+    function wSetLines() {
+      wLines = []; wPaths.forEach(p => p.remove()); wPaths = [];
+      const cs = 10, rs = 32;
+      const cols = Math.ceil((wW + 200) / cs), rows = Math.ceil((wH + 30) / rs);
+      const ox = (wW - cs * cols) / 2, oy = (wH - rs * rows) / 2;
+      for (let c = 0; c <= cols; c++) {
+        const col = [];
+        for (let r = 0; r <= rows; r++)
+          col.push({ x: ox+cs*c, y: oy+rs*r, wave:{x:0,y:0}, cursor:{x:0,y:0,vx:0,vy:0} });
+        const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+        path.setAttribute('fill','none');
+        path.setAttribute('stroke','rgba(249,115,22,0.15)');
+        path.setAttribute('stroke-width','1');
+        wSvg.appendChild(path); wPaths.push(path); wLines.push(col);
+      }
+    }
+
+    function wMoved(pt, cur=true) {
+      return {
+        x: Math.round((pt.x+pt.wave.x+(cur?pt.cursor.x:0))*10)/10,
+        y: Math.round((pt.y+pt.wave.y+(cur?pt.cursor.y:0))*10)/10,
+      };
+    }
+
+    function wMovePoints(t) {
+      wLines.forEach(col => col.forEach(pt => {
+        const o = wNoise.perlin2((pt.x+t*0.0125)*0.002,(pt.y+t*0.005)*0.0015)*12;
+        pt.wave.x = Math.cos(o)*32; pt.wave.y = Math.sin(o)*16;
+        const dx=pt.x-wMouse.sx, dy=pt.y-wMouse.sy, dist=Math.hypot(dx,dy), rad=Math.max(175,wMouse.vs);
+        if (dist < rad) {
+          const p=1-dist/rad, f=Math.cos(dist*0.001)*p;
+          pt.cursor.vx += Math.cos(wMouse.a)*f*rad*wMouse.vs*0.00065;
+          pt.cursor.vy += Math.sin(wMouse.a)*f*rad*wMouse.vs*0.00065;
+        }
+        pt.cursor.vx += (0-pt.cursor.x)*0.005; pt.cursor.vy += (0-pt.cursor.y)*0.005;
+        pt.cursor.vx *= 0.925; pt.cursor.vy *= 0.925;
+        pt.cursor.x += pt.cursor.vx*2; pt.cursor.y += pt.cursor.vy*2;
+        pt.cursor.x = Math.min(100,Math.max(-100,pt.cursor.x));
+        pt.cursor.y = Math.min(100,Math.max(-100,pt.cursor.y));
+      }));
+    }
+
+    function wDrawLines() {
+      wLines.forEach((col, i) => {
+        const first = wMoved(col[0], false);
+        let d = `M ${first.x} ${first.y}`;
+        col.forEach((pt, j) => { const m = wMoved(pt, j !== col.length-1); d += ` L ${m.x} ${m.y}`; });
+        wPaths[i].setAttribute('d', d);
+      });
+    }
+
+    function wTick(t) {
+      wMouse.sx += (wMouse.x-wMouse.sx)*0.1; wMouse.sy += (wMouse.y-wMouse.sy)*0.1;
+      const dx=wMouse.x-wMouse.lx, dy=wMouse.y-wMouse.ly, spd=Math.hypot(dx,dy);
+      wMouse.v=spd; wMouse.vs+=(spd-wMouse.vs)*0.1; wMouse.vs=Math.min(100,wMouse.vs);
+      wMouse.lx=wMouse.x; wMouse.ly=wMouse.y; wMouse.a=Math.atan2(dy,dx);
+      wMovePoints(t); wDrawLines();
+      requestAnimationFrame(wTick);
+    }
+
+    window.addEventListener('mousemove', e => {
+      wMouse.x = e.clientX; wMouse.y = e.clientY;
+      if (!wMouse.set) { wMouse.sx=wMouse.x; wMouse.sy=wMouse.y; wMouse.lx=wMouse.x; wMouse.ly=wMouse.y; wMouse.set=true; }
+    });
+    window.addEventListener('resize', () => { wSetSize(); wSetLines(); });
+
+    wSetSize(); wSetLines(); requestAnimationFrame(wTick);
+  }
 </script>
 
 </body>
