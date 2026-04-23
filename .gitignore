@@ -40,3 +40,4 @@ venv_build/
 dist/
 build/
 *.dmg
+ffmpeg.tar.xz

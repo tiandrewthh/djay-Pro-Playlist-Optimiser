@@ -54,29 +54,6 @@ AUDIO_EXTS         = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.aiff', 
 MIN_SESSION_TRACKS = 20   # sessions shorter than this are treated as testing noise
 
 # ---------------------------------------------------------------------------
-# Bundle Helpers
-# ---------------------------------------------------------------------------
-
-def _get_ffprobe_path():
-    """
-    Determines the path to ffprobe. 
-    If running as a macOS .app bundle, checks the Resources folder first.
-    """
-    # PyInstaller bundles the executable in a temporary folder or a specific .app path
-    if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
-        # In a standard .app bundle, Resources is sibling to MacOS
-        # Bundle structure: MyApp.app/Contents/MacOS/binary  and MyApp.app/Contents/Resources/ffprobe
-        executable_path = sys.executable
-        if 'Contents/MacOS' in executable_path:
-            bundle_root = os.path.dirname(os.path.dirname(executable_path))
-            bundled_ffprobe = os.path.join(bundle_root, 'Resources', 'ffprobe')
-            if os.path.exists(bundled_ffprobe):
-                return bundled_ffprobe
-    
-    return 'ffprobe'  # Fallback to system PATH
-
-
-# ---------------------------------------------------------------------------
 # Camelot wheel (for librosa output: Spotify-style key 0-11, mode 0/1)
 # ---------------------------------------------------------------------------
 CAMELOT = {
@@ -437,12 +414,8 @@ def _recording_track_lists(db):
         if not fname.endswith('.m4a') or fname.startswith('.'):
             continue
         path = os.path.join(RECORDINGS_DIR, fname)
-        
-        # Use bundled ffprobe if available
-        ffprobe_bin = _get_ffprobe_path()
-        
         result = subprocess.run(
-            [ffprobe_bin, '-v', 'quiet', '-show_entries', 'format=duration',
+            ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
              '-of', 'default=noprint_wrappers=1:nokey=1', path],
             capture_output=True, text=True
         )
