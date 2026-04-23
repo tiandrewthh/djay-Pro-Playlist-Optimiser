@@ -1,4 +1,4 @@
-# DJ Playlist Optimiser
+# djay Pro Playlist Optimiser
 
 Reorders djay Pro playlists for smoother DJ sets using Camelot key compatibility, BPM progression, and energy flow. Runs a greedy sort followed by simulated annealing to find the best track order, then optionally writes the result back to djay Pro.
 
