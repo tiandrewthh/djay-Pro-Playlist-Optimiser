@@ -13,7 +13,7 @@ echo "🚀 Starting build process for $APP_NAME..."
 
 # 1. Clean up previous builds
 echo "🧹 Cleaning up old build files..."
-rm -rf "$OUTPUT_DIR" "$DIST_DIR" "$BUILD_DIR"
+rm -rf "$OUTPUT_DIR" "$DIST_DIR" "$BUILD_DIR" dmg_root
 mkdir -p "$OUTPUT_DIR"
 
 # 2. Setup virtual environment for a clean build
@@ -48,6 +48,12 @@ pyinstaller --noconfirm --onefile --windowed \
     --collect-all librosa \
     --collect-all sklearn \
     api.py
+
+# Verify binary exists
+if [ ! -f "$DIST_DIR/dj_optimiser_bin" ]; then
+    echo "❌ Error: PyInstaller failed to create the binary at $DIST_DIR/dj_optimiser_bin"
+    exit 1
+fi
 
 # 5. Create macOS .app structure
 echo "📂 Creating .app bundle structure..."
@@ -95,7 +101,5 @@ hdiutil create -volname "$APP_NAME" -srcfolder dmg_root -ov -format UDZO "$DMG_N
 # Final Cleanup
 echo "🧹 Final cleanup..."
 rm -rf venv_build dmg_root Resources
-# Keep the dist/build folders for debugging or delete them:
-# rm -rf "$DIST_DIR" "$BUILD_DIR"
 
 echo "✅ Build Complete! You can find your installer here: $DMG_NAME"
