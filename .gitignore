@@ -31,3 +31,9 @@ venv/
 
 # Claude Code
 .claude/
+
+# Build
+build_macos.sh
+build_output/
+Resources/
+venv_build/
