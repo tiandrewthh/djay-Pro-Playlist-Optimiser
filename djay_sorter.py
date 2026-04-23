@@ -101,6 +101,15 @@ def list_playlists(db):
     return [(rowid, name, count) for rowid, name, count in rows]
 
 
+def _track_label(media_rowid, fts_titles, path=None):
+    title, artist = fts_titles.get(media_rowid, ('', ''))
+    if title:
+        return f"{artist} – {title}" if artist else title
+    if path:
+        return os.path.basename(path)
+    return f"track #{media_rowid}"
+
+
 def get_playlist_tracks(db, playlist_rowid):
     # Fetch only the media rowids that belong to this playlist
     rows = db.execute('''
@@ -153,18 +162,18 @@ def get_playlist_tracks(db, playlist_rowid):
     for media_rowid in media_rowids:
         item_key = rowid_to_key.get(media_rowid)
         if not item_key:
-            skip_reasons.append('no database entry')
+            skip_reasons.append((_track_label(media_rowid, fts_titles), 'no database entry'))
             continue
         path = path_by_key.get(item_key)
         if not path:
-            skip_reasons.append('no file path in database')
+            skip_reasons.append((_track_label(media_rowid, fts_titles), 'no file path in database'))
             continue
         if not os.path.exists(path):
-            skip_reasons.append('file not found')
+            skip_reasons.append((_track_label(media_rowid, fts_titles, path), 'file not found'))
             continue
         ext = os.path.splitext(path)[1].lower()
         if ext not in AUDIO_EXTS:
-            skip_reasons.append(f'unsupported format ({ext})')
+            skip_reasons.append((_track_label(media_rowid, fts_titles, path), f'unsupported format ({ext})'))
             continue
 
         title, artist = fts_titles.get(media_rowid, ('', ''))
@@ -180,7 +189,9 @@ def get_playlist_tracks(db, playlist_rowid):
         })
 
     if skip_reasons:
-        logger.warning('Skipped %d track(s): %s', len(skip_reasons), ', '.join(set(skip_reasons)))
+        logger.warning('Skipped %d track(s):', len(skip_reasons))
+        for label, reason in skip_reasons:
+            logger.warning('  • %s — %s', label, reason)
 
     return tracks, skip_reasons
 

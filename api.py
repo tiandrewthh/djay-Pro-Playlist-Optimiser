@@ -142,10 +142,10 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
         raise ValueError('Playlist must contain at least 2 tracks to be sorted.')
 
     if skip_reasons:
-        from collections import Counter
-        counts = Counter(skip_reasons)
-        parts = [f"{reason} ×{n}" if n > 1 else reason for reason, n in counts.most_common()]
-        skipped_msg = f"{len(skip_reasons)} track{'s' if len(skip_reasons) > 1 else ''} skipped — {', '.join(parts)}"
+        n = len(skip_reasons)
+        header = f"{n} track{'s' if n > 1 else ''} skipped: "
+        parts = [f'"{label}" ({reason})' for label, reason in skip_reasons]
+        skipped_msg = header + "; ".join(parts)
     else:
         skipped_msg = None
 
