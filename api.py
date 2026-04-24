@@ -8,6 +8,7 @@ import io
 import threading
 import uuid
 import time
+import asyncio
 from typing import Any, Optional
 
 import os
@@ -64,10 +65,27 @@ app.add_middleware(
 
 # Sort is CPU-bound; run in a thread pool to avoid blocking the event loop
 _STATIC = os.path.join(os.path.dirname(__file__), 'static')
+_CONFIG_FILE = os.path.join(os.path.dirname(__file__), '.app_config.json')
 
-app_config = {
-    'db_path': None,
-}
+
+def _load_app_config() -> dict:
+    """Load persisted config from .app_config.json, or return defaults."""
+    if os.path.exists(_CONFIG_FILE):
+        try:
+            with open(_CONFIG_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {'db_path': None}
+
+
+def _save_app_config(config: dict) -> None:
+    """Persist config to .app_config.json."""
+    with open(_CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+
+app_config = _load_app_config()
 app.mount('/static', StaticFiles(directory=_STATIC), name='static')
 
 
@@ -362,6 +380,7 @@ def set_config(config: ConfigRequest):
     if new_path and not os.path.exists(new_path):
         raise HTTPException(status_code=400, detail='The provided path does not exist on this machine.')
     app_config['db_path'] = new_path
+    _save_app_config(app_config)
     return {'status': 'success', 'db_path': app_config['db_path']}
 
 
@@ -399,15 +418,22 @@ def get_playlists():
 
 @app.post('/sort', response_model=SortResponse)
 @handle_djay_errors
-def sort_playlist(req: SortRequest):
-    return _do_sort(req)
+async def sort_playlist(req: SortRequest):
+    """Sort a playlist synchronously but offloaded to a thread pool.
+
+    Unlike /sort/start this blocks until the sort is complete, but runs
+    in a thread pool so it does NOT block the FastAPI event loop.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _do_sort, req)
 
 
 @app.post('/sort/m3u')
 @handle_djay_errors
-def sort_and_export_m3u(req: SortRequest):
+async def sort_and_export_m3u(req: SortRequest):
     """Sort a playlist and return the result as a downloadable M3U file."""
-    result = _do_sort(req)
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, _do_sort, req)
     content = _build_m3u(result['tracks'])
     return StreamingResponse(
         io.BytesIO(content.encode('utf-8')),

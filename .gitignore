@@ -32,6 +32,7 @@ test-results/
 .cache
 *.pkl
 *.dj_key_cache.json
+.app_config.json
 
 # IDE
 .vscode/

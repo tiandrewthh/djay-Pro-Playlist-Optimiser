@@ -50,6 +50,7 @@ warnings.filterwarnings('ignore', category=FutureWarning, module='librosa')
 
 DJAY_DB            = os.path.expanduser('~/Music/djay/djay Media Library.djayMediaLibrary/MediaLibrary.db')
 CACHE_FILE         = os.path.expanduser('~/.dj_key_cache.json')
+CACHE_MAX_ENTRIES  = 5000   # max tracks to keep in feature cache
 MODEL_FILE         = os.path.expanduser('~/.dj_transition_model.pkl')
 AUDIO_EXTS         = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.aiff', '.aif', '.mp4'}
 MIN_SESSION_TRACKS = 20   # sessions shorter than this are treated as testing noise
@@ -252,6 +253,13 @@ def load_key_cache():
 
 
 def save_key_cache(cache):
+    # Evict oldest entries if cache exceeds max size
+    if len(cache) > CACHE_MAX_ENTRIES:
+        # Keep the most recently modified entries (highest mtime)
+        sorted_paths = sorted(cache.keys(), key=lambda p: cache.get(p, {}).get('mtime', '0'))
+        to_remove = len(cache) - CACHE_MAX_ENTRIES
+        for path in sorted_paths[:to_remove]:
+            del cache[path]
     with open(CACHE_FILE, 'w') as f:
         json.dump(cache, f, indent=2)
 
