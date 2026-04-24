@@ -207,18 +207,18 @@ def get_playlist_tracks(db, playlist_rowid) -> tuple[list[RawTrack], list[tuple[
     for media_rowid in media_rowids:
         item_key = rowid_to_key.get(media_rowid)
         if not item_key:
-            skip_reasons.append((_track_label(media_rowid, fts_titles), 'no database entry'))
+            skip_reasons.append((_track_label(media_rowid, fts_titles), 'Track metadata not found in library'))
             continue
         path = path_by_key.get(item_key)
         if not path:
-            skip_reasons.append((_track_label(media_rowid, fts_titles), 'no file path in database'))
+            skip_reasons.append((_track_label(media_rowid, fts_titles), 'No file path linked — remove and re-add to library'))
             continue
         if not os.path.exists(path):
-            skip_reasons.append((_track_label(media_rowid, fts_titles, path), 'file not found'))
+            skip_reasons.append((_track_label(media_rowid, fts_titles, path), 'File moved or deleted on disk'))
             continue
         ext = os.path.splitext(path)[1].lower()
         if ext not in AUDIO_EXTS:
-            skip_reasons.append((_track_label(media_rowid, fts_titles, path), f'unsupported format ({ext})'))
+            skip_reasons.append((_track_label(media_rowid, fts_titles, path), f'Audio format not supported ({ext.upper().lstrip(".")})'))
             continue
 
         title, artist = fts_titles.get(media_rowid, ('', ''))
@@ -912,7 +912,7 @@ def export_m3u(tracks, output_path):
             label  = f"{artist} - {name}" if artist else name
             f.write(f'#EXTINF:-1,{label}\n')
             f.write(f"{t['path']}\n")
-    print(f"M3U exported → {output_path}")
+    logger.info('M3U exported → %s', output_path)
 
 
 def transition_stats(tracks, label=''):
@@ -1001,7 +1001,7 @@ def create_sorted_clone(pl_rowid, sorted_tracks, new_name):
         raise RuntimeError('djay Pro is running — quit it before writing the sorted playlist.')
 
     backup_path = _backup_djay_db()
-    print(f'Database backed up → {backup_path}')
+    logger.info('Database backed up → %s', backup_path)
 
     db = sqlite3.connect(DJAY_DB)
     try:
@@ -1146,8 +1146,8 @@ def create_sorted_clone(pl_rowid, sorted_tracks, new_name):
             raise ValueError(f'Integrity check failed: {result}')
 
         db.execute('COMMIT')
-        print(f"'{new_name}' created in djay Pro ({len(new_item_rowids)} tracks).")
-        print('Relaunch djay Pro to see it.')
+        logger.info("'%s' created in djay Pro (%d tracks).", new_name, len(new_item_rowids))
+        logger.info('Relaunch djay Pro to see it.')
 
     except Exception as e:
         try:
@@ -1155,7 +1155,7 @@ def create_sorted_clone(pl_rowid, sorted_tracks, new_name):
         except Exception:
             pass
         db.close()
-        print(f'Error: {e} — changes rolled back, database unchanged.')
+        logger.error('Error: %s — changes rolled back, database unchanged.', e)
         raise
 
     db.close()

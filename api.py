@@ -358,7 +358,7 @@ def _build_m3u(tracks: list[dict]) -> str:
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.get('/config')
+@app.get('/config', summary='Get library configuration', description='Returns the current djay Pro database path and whether it was found on disk.')
 def get_config():
     is_found = False
     db = None
@@ -373,7 +373,7 @@ def get_config():
     return {'db_path': app_config['db_path'], 'found': is_found}
 
 
-@app.post('/config')
+@app.post('/config', summary='Set library configuration', description='Set a custom djay Pro database path. Persists across server restarts.')
 @handle_djay_errors
 def set_config(config: ConfigRequest):
     new_path = config.db_path
@@ -384,7 +384,7 @@ def set_config(config: ConfigRequest):
     return {'status': 'success', 'db_path': app_config['db_path']}
 
 
-@app.get('/health')
+@app.get('/health', summary='Health check', description='Returns API status, database connectivity, and number of running sort jobs.')
 def health():
     db = None
     try:
@@ -405,7 +405,7 @@ def health():
     return {'status': 'ok', 'db': db_status, 'running_jobs': running_jobs}
 
 
-@app.get('/playlists', response_model=list[Playlist])
+@app.get('/playlists', response_model=list[Playlist], summary='List playlists', description='Returns all playlists from the djay Pro library with track counts.')
 @handle_djay_errors
 def get_playlists():
     db = open_djay_db(custom_path=app_config['db_path'])
@@ -416,7 +416,7 @@ def get_playlists():
         db.close()
 
 
-@app.post('/sort', response_model=SortResponse)
+@app.post('/sort', response_model=SortResponse, summary='Sort playlist (synchronous)', description='Sort a playlist using greedy + simulated annealing. Runs in a thread pool to avoid blocking the event loop. For long playlists, prefer /sort/start for progress feedback.')
 @handle_djay_errors
 async def sort_playlist(req: SortRequest):
     """Sort a playlist synchronously but offloaded to a thread pool.
@@ -428,7 +428,7 @@ async def sort_playlist(req: SortRequest):
     return await loop.run_in_executor(None, _do_sort, req)
 
 
-@app.post('/sort/m3u')
+@app.post('/sort/m3u', summary='Sort and export as M3U', description='Sort a playlist and return the result as a downloadable M3U file.')
 @handle_djay_errors
 async def sort_and_export_m3u(req: SortRequest):
     """Sort a playlist and return the result as a downloadable M3U file."""
@@ -442,7 +442,7 @@ async def sort_and_export_m3u(req: SortRequest):
     )
 
 
-@app.post('/export')
+@app.post('/export', summary='Export sorted playlist to djay Pro', description='Write a previously sorted tracklist as a new playlist in the djay Pro library.')
 @handle_djay_errors
 def export_to_djay(req: ExportRequest):
     """Writes a previously sorted tracklist as a new playlist into djay Pro."""
@@ -475,7 +475,7 @@ def export_to_djay(req: ExportRequest):
 
 _MAX_CONCURRENT_JOBS = 3
 
-@app.post('/sort/start')
+@app.post('/sort/start', summary='Start sort job (async)', description='Start a background sort job. Returns a job_id to poll via /jobs/{job_id} for progress and results.')
 @handle_djay_errors
 def start_sort(req: SortRequest):
     """Start a sort job in the background; returns a job_id to poll."""
@@ -495,7 +495,7 @@ def start_sort(req: SortRequest):
     return {'job_id': job_id}
 
 
-@app.get('/jobs/{job_id}')
+@app.get('/jobs/{job_id}', summary='Get sort job status', description='Poll a background sort job. Returns progress, stage message, and result when done.')
 def get_job(job_id: str):
     with _jobs_lock:
         job = _jobs.get(job_id)

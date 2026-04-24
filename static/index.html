@@ -496,7 +496,7 @@
 
     /* ── Waves background ── */
     #waves-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-    header, main, footer, .app-loader, .modal-overlay { position: relative; z-index: 1; }
+    header, main, footer, .app-loader { position: relative; z-index: 1; }
 
     /* ── Warning Details ── */
     .warning-details {
@@ -625,7 +625,7 @@
       </div>
     </div>
     <div style="border-top:1px solid var(--border);padding-top:24px">
-      <canvas id="chart" height="240" style="width:100%;display:block;cursor:crosshair"></canvas>
+      <canvas id="chart" height="240" role="img" aria-label="Chart showing BPM progression and energy flow across the sorted playlist. Orange line is BPM, purple line is energy level (1-5)." style="width:100%;display:block;cursor:crosshair"></canvas>
       <div style="display:flex;gap:20px;margin-top:10px">
         <span style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)">
           <span style="width:18px;height:2px;background:#f97316;display:inline-block;border-radius:1px"></span> BPM
@@ -779,6 +779,27 @@
 
   function clearErr() { errBox.classList.add('hidden'); }
 
+  // Map raw API error messages to user-friendly text
+  function friendlyError(raw) {
+    const msg = String(raw).toLowerCase();
+    if (msg.includes('database is locked') || msg.includes('locked'))
+      return 'djay Pro database is locked. Close djay Pro and try again.';
+    if (msg.includes('no local tracks') || msg.includes('no valid tracks'))
+      return 'No playable tracks found in this playlist. Make sure tracks are local files.';
+    if (msg.includes('no tracks could be analysed'))
+      return 'Could not analyse any tracks. Ensure audio files are accessible.';
+    if (msg.includes('playlist must contain at least 2'))
+      return 'Playlist needs at least 2 tracks to sort.';
+    if (msg.includes('not found') || msg.includes('file not found'))
+      return 'Some track files are missing from disk. Remove them from the playlist first.';
+    if (msg.includes('djay pro is running') || msg.includes('quit it'))
+      return 'Quit djay Pro before exporting the sorted playlist.';
+    if (msg.includes('cannot reach api'))
+      return 'Cannot connect to the server. Check that the app is running.';
+    // Fallback: strip technical noise but keep the core message
+    return raw;
+  }
+
   function setLoading(on, text = 'Sort Playlist') {
     btnSort.disabled = on;
     btnSort.innerHTML = on ? '<span class="spinner"></span>' + text : 'Sort Playlist';
@@ -809,16 +830,37 @@
 
     const confirmBtn = document.getElementById('modal-confirm');
     const cancelBtn  = document.getElementById('modal-cancel');
+    const focusable  = [nameInp, cancelBtn, confirmBtn].filter(el => !el.closest('.hidden'));
+    const firstFocus = focusable[0] || confirmBtn;
+    const lastFocus  = focusable[focusable.length - 1] || cancelBtn;
+    const prevActive = document.activeElement;
+
+    // Focus first element on open
+    firstFocus.focus();
+
+    // Trap Tab within modal
+    function trapFocus(e) {
+      if (e.key !== 'Tab') return;
+      if (e.shiftKey) {
+        if (document.activeElement === firstFocus) { e.preventDefault(); lastFocus.focus(); }
+      } else {
+        if (document.activeElement === lastFocus) { e.preventDefault(); firstFocus.focus(); }
+      }
+    }
+    modalOverlay.addEventListener('keydown', trapFocus);
 
     function cleanup() {
       modalOverlay.classList.add('hidden');
+      modalOverlay.removeEventListener('keydown', trapFocus);
       confirmBtn.removeEventListener('click', handleConfirm);
       cancelBtn.removeEventListener('click',  handleCancel);
+      // Restore focus to trigger element
+      if (prevActive && prevActive.focus) prevActive.focus();
     }
-    function handleConfirm() { 
+    function handleConfirm() {
       const finalName = showInput ? nameInp.value.trim() : null;
-      cleanup(); 
-      onConfirm(finalName); 
+      cleanup();
+      onConfirm(finalName);
     }
     function handleCancel()  { cleanup(); }
 
@@ -856,7 +898,7 @@
       renderDropdown(allPlaylists);
     } catch (e) {
       dot.classList.add('offline');
-      showErr('Cannot reach API: ' + e.message);
+      showErr(friendlyError('Cannot reach API: ' + e.message));
     } finally {
       appLoader.classList.add('hidden');
     }
@@ -929,7 +971,7 @@
 
       renderResults(lastResult);
     } catch (e) {
-      showErr('Sort failed: ' + e.message);
+      showErr(friendlyError(e.message));
       progressWrap.classList.add('hidden');
     } finally {
       setLoading(false);
@@ -986,7 +1028,7 @@
 
           alert(`Successfully exported as "${name}"!`);
         } catch (e) {
-          showErr('Export failed: ' + e.message);
+          showErr(friendlyError('Export failed: ' + e.message));
         } finally {
           btnExportDjay.disabled = false;
           btnExportDjay.textContent = originalText;
@@ -1032,7 +1074,13 @@
       data.skipped_tracks.forEach(group => totalSkipped += group.tracks.length);
       
       // Create high-level summary
-      const summaryText = `${totalSkipped} track${totalSkipped !== 1 ? 's' : ''} were skipped due to unsupported formats or missing files.`;
+      const reasons = data.skipped_tracks.map(g => g.reason.toLowerCase());
+      let summaryText;
+      if (totalSkipped === 1) {
+        summaryText = `1 track was skipped.`;
+      } else {
+        summaryText = `${totalSkipped} tracks were skipped.`;
+      }
       
       warnBox.innerHTML = `
         <div style="display:flex; align-items:center; justify-content:space-between">
@@ -1384,7 +1432,7 @@
         loadPlaylists();
       }, 2000);
     } catch (e) {
-      showErr('Path error: ' + e.message);
+      showErr(friendlyError('Path error: ' + e.message));
     }
   }
     btnSavePath.addEventListener('click', savePath);
