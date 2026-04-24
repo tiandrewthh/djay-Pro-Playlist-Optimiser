@@ -76,6 +76,34 @@ def root():
 
 
 # ---------------------------------------------------------------------------
+# Error-handling decorator
+# ---------------------------------------------------------------------------
+
+from functools import wraps
+
+
+def handle_djay_errors(func):
+    """Wrap endpoint logic to map common exceptions to HTTP status codes."""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=503, detail=str(e))
+        except sqlite3.OperationalError as e:
+            if 'locked' in str(e).lower():
+                raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
+            raise HTTPException(status_code=500, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+    return wrapper
+
+
+# ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
 
@@ -251,33 +279,41 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
 # ---------------------------------------------------------------------------
 
 _jobs: dict[str, dict[str, Any]] = {}
+_jobs_lock = threading.Lock()
 
 
 def _run_job(job_id: str, req: SortRequest) -> None:
     def cb(fraction: float, message: str = '') -> None:
-        _jobs[job_id]['progress'] = round(fraction, 3)
-        _jobs[job_id]['stage']    = message
+        with _jobs_lock:
+            _jobs[job_id]['progress'] = round(fraction, 3)
+            _jobs[job_id]['stage']    = message
 
     try:
         result = _do_sort(req, progress_cb=cb)
-        _jobs[job_id].update({'status': 'done', 'progress': 1.0, 'result': result, 'finished_at': time.time()})
+        with _jobs_lock:
+            _jobs[job_id].update({'status': 'done', 'progress': 1.0, 'result': result, 'finished_at': time.time()})
     except Exception as e:
-        _jobs[job_id].update({'status': 'error', 'error': str(e), 'finished_at': time.time()})
+        with _jobs_lock:
+            _jobs[job_id].update({'status': 'error', 'error': str(e), 'finished_at': time.time()})
 
 
 def _cleanup_jobs():
     """Background worker to evict old jobs from memory to prevent leaks."""
     while True:
-        time.sleep(300) # Run every 5 minutes
-        now = time.time()
-        to_delete = []
-        for jid, data in _jobs.items():
-            if data.get('status') in ('done', 'error'):
-                finished_at = data.get('finished_at', 0)
-                if now - finished_at > 900: # Evict after 15 minutes
-                    to_delete.append(jid)
-        for jid in to_delete:
-            del _jobs[jid]
+        try:
+            time.sleep(300)  # Run every 5 minutes
+            now = time.time()
+            with _jobs_lock:
+                to_delete = [
+                    jid for jid, data in _jobs.items()
+                    if data.get('status') in ('done', 'error')
+                    and now - data.get('finished_at', 0) > 900  # Evict after 15 minutes
+                ]
+                for jid in to_delete:
+                    del _jobs[jid]
+        except Exception:
+            # If anything goes wrong, sleep longer and retry — never let this thread die
+            time.sleep(3600)
 
 
 def _build_m3u(tracks: list[dict]) -> str:
@@ -333,62 +369,33 @@ def health():
         if db:
             db.close()
 
-    running_jobs = sum(1 for j in _jobs.values() if j.get('status') == 'running')
+    with _jobs_lock:
+        running_jobs = sum(1 for j in _jobs.values() if j.get('status') == 'running')
     return {'status': 'ok', 'db': db_status, 'running_jobs': running_jobs}
 
 
 @app.get('/playlists', response_model=list[Playlist])
+@handle_djay_errors
 def get_playlists():
-    db = None
+    db = open_djay_db(custom_path=app_config['db_path'])
     try:
-        db = open_djay_db(custom_path=app_config['db_path'])
         rows = list_playlists(db)
         return [{'id': r, 'name': n, 'track_count': c} for r, n, c in rows]
-    except sqlite3.OperationalError as e:
-        if 'locked' in str(e).lower():
-            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
-        raise HTTPException(status_code=500, detail=str(e))
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if db:
-            db.close()
+        db.close()
 
 
 @app.post('/sort', response_model=SortResponse)
+@handle_djay_errors
 def sort_playlist(req: SortRequest):
-    try:
-        return _do_sort(req)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except sqlite3.OperationalError as e:
-        if 'locked' in str(e).lower():
-            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return _do_sort(req)
 
 
 @app.post('/sort/m3u')
+@handle_djay_errors
 def sort_and_export_m3u(req: SortRequest):
     """Sort a playlist and return the result as a downloadable M3U file."""
-    try:
-        result = _do_sort(req)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except sqlite3.OperationalError as e:
-        if 'locked' in str(e).lower():
-            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
-        raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    result = _do_sort(req)
     content = _build_m3u(result['tracks'])
     return StreamingResponse(
         io.BytesIO(content.encode('utf-8')),
@@ -398,75 +405,62 @@ def sort_and_export_m3u(req: SortRequest):
 
 
 @app.post('/export')
+@handle_djay_errors
 def export_to_djay(req: ExportRequest):
     """Writes a previously sorted tracklist as a new playlist into djay Pro."""
+    db = open_djay_db(custom_path=app_config['db_path'])
     try:
-        db = open_djay_db(custom_path=app_config['db_path'])
-        try:
-            playlist_tracks, _ = get_playlist_tracks(db, req.playlist_id)
-        finally:
-            db.close()
+        playlist_tracks, _ = get_playlist_tracks(db, req.playlist_id)
+    finally:
+        db.close()
 
-        path_to_rowid = {t['path']: t['_rowid'] for t in playlist_tracks}
+    path_to_rowid = {t['path']: t['_rowid'] for t in playlist_tracks}
 
-        sorted_internal = []
-        for t in req.tracks:
-            rowid = path_to_rowid.get(t.path)
-            if rowid is not None:
-                sorted_internal.append({
-                    'name': t.name,
-                    'artist': t.artist,
-                    'path': t.path,
-                    'tempo': t.bpm,
-                    '_rowid': rowid,
-                })
+    sorted_internal = []
+    for t in req.tracks:
+        rowid = path_to_rowid.get(t.path)
+        if rowid is not None:
+            sorted_internal.append({
+                'name': t.name,
+                'artist': t.artist,
+                'path': t.path,
+                'tempo': t.bpm,
+                '_rowid': rowid,
+            })
 
-        if not sorted_internal:
-            raise ValueError("No valid tracks from the sorted list could be found in the original playlist.")
+    if not sorted_internal:
+        raise ValueError("No valid tracks from the sorted list could be found in the original playlist.")
 
-        create_sorted_clone(req.playlist_id, sorted_internal, req.output_name)
-        return {'status': 'success', 'message': f"Playlist '{req.output_name}' created."}
-
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    create_sorted_clone(req.playlist_id, sorted_internal, req.output_name)
+    return {'status': 'success', 'message': f"Playlist '{req.output_name}' created."}
 
 
 _MAX_CONCURRENT_JOBS = 3
 
 @app.post('/sort/start')
+@handle_djay_errors
 def start_sort(req: SortRequest):
     """Start a sort job in the background; returns a job_id to poll."""
-    running = sum(1 for j in _jobs.values() if j.get('status') == 'running')
+    with _jobs_lock:
+        running = sum(1 for j in _jobs.values() if j.get('status') == 'running')
     if running >= _MAX_CONCURRENT_JOBS:
         raise HTTPException(status_code=429, detail='Too many sort jobs running. Please wait for one to finish.')
 
     # Guard against database locks before spawning a thread
-    db = None
-    try:
-        db = open_djay_db(custom_path=app_config['db_path'])
-    except sqlite3.OperationalError as e:
-        if 'locked' in str(e).lower():
-            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
-        raise HTTPException(status_code=500, detail=str(e))
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    finally:
-        if db:
-            db.close()
+    db = open_djay_db(custom_path=app_config['db_path'])
+    db.close()
 
     job_id = uuid.uuid4().hex[:8]
-    _jobs[job_id] = {'status': 'running', 'progress': 0.0, 'stage': 'Starting…'}
+    with _jobs_lock:
+        _jobs[job_id] = {'status': 'running', 'progress': 0.0, 'stage': 'Starting…'}
     threading.Thread(target=_run_job, args=(job_id, req), daemon=True).start()
     return {'job_id': job_id}
 
 
 @app.get('/jobs/{job_id}')
 def get_job(job_id: str):
-    job = _jobs.get(job_id)
+    with _jobs_lock:
+        job = _jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail='Job not found')
     return job

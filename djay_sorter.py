@@ -53,6 +53,27 @@ MODEL_FILE         = os.path.expanduser('~/.dj_transition_model.pkl')
 AUDIO_EXTS         = {'.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.aiff', '.aif', '.mp4'}
 MIN_SESSION_TRACKS = 20   # sessions shorter than this are treated as testing noise
 
+# Audio analysis
+ANALYSIS_DURATION_SECS = 120   # seconds of audio to analyse for key detection
+MAX_ANALYSIS_WORKERS   = 4     # parallel threads for librosa.load
+
+# Transition cost normalisation ranges
+BPM_NORMALISATION      = 140.0   # max BPM difference for cost scaling
+KEY_NORMALISATION      = 6.0     # max Camelot distance for cost scaling
+FLUX_NORMALISATION     = 10.0    # typical spectral flux range
+CENTROID_NORMALISATION = 3500.0  # typical spectral centroid range (Hz)
+
+# Transition cost weights (must sum to 1.0)
+BPM_W      = 0.30
+KEY_W      = 0.50
+FLUX_W     = 0.12
+SPECTRAL_W = 0.08
+
+# Simulated annealing defaults
+SA_T_START  = 1.0
+SA_T_END    = 0.001
+SA_ALPHA    = 0.995
+
 # ---------------------------------------------------------------------------
 # Camelot wheel (for librosa output: Spotify-style key 0-11, mode 0/1)
 # ---------------------------------------------------------------------------
@@ -214,7 +235,7 @@ def save_key_cache(cache):
 
 def extract_audio_features(path):
     """Extract key, mode, spectral flux, spectral centroid, onset density, and BPM."""
-    y, sr = librosa.load(path, mono=True, duration=120)
+    y, sr = librosa.load(path, mono=True, duration=ANALYSIS_DURATION_SECS)
 
     # Key detection via Krumhansl-Schmuckler key profiles
     chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
@@ -403,6 +424,13 @@ def _recording_track_lists(db):
     file-mtime window. Returns a list of ordered title_id lists.
     """
     if not os.path.isdir(RECORDINGS_DIR):
+        return []
+
+    if not shutil.which('ffprobe'):
+        logger.warning(
+            "ffprobe not found on PATH — skipping recording-based training data. "
+            "Install with 'brew install ffmpeg'."
+        )
         return []
 
     all_items = _parse_all_items_flat(db)
@@ -655,10 +683,12 @@ def _build_cost_matrix(tracks, cost_fn):
     For n=100 this is 10,000 calls once at startup vs ~2M calls during SA.
     """
     n = len(tracks)
+    matrix = [[0.0] * n for _ in range(n)]
+    if n < 2:
+        return matrix
     # Build all (i,j) pairs as a batch for vectorised ML scoring
     pairs_i, pairs_j = zip(*[(i, j) for i in range(n) for j in range(n) if i != j])
     costs_flat = [cost_fn(tracks[i], tracks[j]) for i, j in zip(pairs_i, pairs_j)]
-    matrix = [[0.0] * n for _ in range(n)]
     for (i, j), c in zip(zip(pairs_i, pairs_j), costs_flat):
         matrix[i][j] = c
     return matrix
