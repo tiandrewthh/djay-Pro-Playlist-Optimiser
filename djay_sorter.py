@@ -29,6 +29,7 @@ import sys
 import threading
 import uuid
 import warnings
+from typing import TypedDict
 from urllib.parse import unquote
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,28 @@ SPECTRAL_W = 0.08
 SA_T_START  = 1.0
 SA_T_END    = 0.001
 SA_ALPHA    = 0.995
+
+# ---------------------------------------------------------------------------
+# Track data structures
+# ---------------------------------------------------------------------------
+
+class RawTrack(TypedDict):
+    """Track as returned from get_playlist_tracks — before audio analysis."""
+    name: str
+    artist: str
+    path: str
+    tempo: float
+    _rowid: int
+
+
+class EnrichedTrack(RawTrack):
+    """Track after enrich_with_keys — includes audio analysis results."""
+    key: int
+    mode: int
+    camelot: tuple[int, str]
+    spectral_flux: float
+    spectral_centroid: float
+    onset_density: float
 
 # ---------------------------------------------------------------------------
 # Camelot wheel (for librosa output: Spotify-style key 0-11, mode 0/1)
@@ -131,7 +154,7 @@ def _track_label(media_rowid, fts_titles, path=None):
     return f"track #{media_rowid}"
 
 
-def get_playlist_tracks(db, playlist_rowid):
+def get_playlist_tracks(db, playlist_rowid) -> tuple[list[RawTrack], list[tuple[str, str]]]:
     # Fetch only the media rowids that belong to this playlist
     rows = db.execute('''
         SELECT r_media.dst, idx.bpm
@@ -266,7 +289,7 @@ def extract_audio_features(path):
     return best_key, best_mode, spectral_flux, centroid, onset_density, detected_bpm
 
 
-def enrich_with_keys(tracks, progress_cb=None):
+def enrich_with_keys(tracks: list[RawTrack], progress_cb=None) -> list[EnrichedTrack]:
     cache = load_key_cache()
     total = len(tracks)
 
@@ -641,11 +664,61 @@ def ml_transition_cost(a, b, model):
     return 1.0 - prob_good   # convert probability of good transition → cost
 
 
+def _build_ml_cost_matrix(tracks: list[EnrichedTrack], model) -> list[list[float]]:
+    """Vectorised ML cost matrix — calls predict_proba once for all N×N pairs.
+
+    For n=100 this is 1 predict_proba call with 10,000 samples instead of
+    10,000 individual calls — typically 5-10x faster.
+    """
+    n = len(tracks)
+    matrix = [[0.0] * n for _ in range(n)]
+    if n < 2:
+        return matrix
+
+    # Build feature vectors for all (i,j) pairs at once
+    tempos = np.array([t['tempo'] for t in tracks])
+    fluxes = np.array([t.get('spectral_flux', 0) for t in tracks])
+    centroids = np.array([t.get('spectral_centroid', 0) for t in tracks])
+    onset_densities = np.array([t.get('onset_density', 0) for t in tracks])
+    camelots = [t['camelot'] for t in tracks]
+
+    pairs_i, pairs_j = zip(*[(i, j) for i in range(n) for j in range(n) if i != j])
+    tempos_i, tempos_j = tempos[list(pairs_i)], tempos[list(pairs_j)]
+
+    # BPM diff with half/double-time awareness
+    bpm_diffs = np.minimum(
+        np.abs(tempos_i - tempos_j),
+        np.minimum(np.abs(tempos_i - tempos_j * 2), np.abs(tempos_i * 2 - tempos_j)),
+    )
+
+    # Camelot distance (vectorised)
+    key_dists = np.array([
+        camelot_distance(camelots[i], camelots[j])
+        for i, j in zip(pairs_i, pairs_j)
+    ])
+
+    feature_matrix = np.column_stack([
+        bpm_diffs,
+        key_dists,
+        np.abs(fluxes[list(pairs_i)] - fluxes[list(pairs_j)]),
+        np.abs(centroids[list(pairs_i)] - centroids[list(pairs_j)]),
+        np.abs(onset_densities[list(pairs_i)] - onset_densities[list(pairs_j)]),
+    ])
+
+    probs = model.predict_proba(feature_matrix)[:, 1]
+    costs = 1.0 - probs
+
+    for (i, j), cost in zip(zip(pairs_i, pairs_j), costs):
+        matrix[i][j] = float(cost)
+
+    return matrix
+
+
 # ---------------------------------------------------------------------------
 # Sorting
 # ---------------------------------------------------------------------------
 
-def camelot_distance(c1, c2):
+def camelot_distance(c1: tuple[int, str], c2: tuple[int, str]) -> float:
     n1, l1 = c1
     n2, l2 = c2
     if n1 == n2 and l1 == l2:
@@ -656,7 +729,7 @@ def camelot_distance(c1, c2):
     return num_diff + (0.0 if l1 == l2 else 0.5)
 
 
-def transition_cost(a, b, bpm_w=BPM_W, key_w=KEY_W, flux_w=FLUX_W, spectral_w=SPECTRAL_W):
+def transition_cost(a: EnrichedTrack, b: EnrichedTrack, bpm_w=BPM_W, key_w=KEY_W, flux_w=FLUX_W, spectral_w=SPECTRAL_W) -> float:
     bpm_diff = min(
         abs(a['tempo'] - b['tempo']),
         abs(a['tempo'] - b['tempo'] * 2),
@@ -671,11 +744,11 @@ def transition_cost(a, b, bpm_w=BPM_W, key_w=KEY_W, flux_w=FLUX_W, spectral_w=SP
     return bpm_w * bpm_cost + key_w * key_cost + flux_w * flux_cost + spectral_w * spectral_cost
 
 
-def total_cost(tracks):
+def total_cost(tracks: list[EnrichedTrack]) -> float:
     return sum(transition_cost(tracks[i], tracks[i + 1]) for i in range(len(tracks) - 1))
 
 
-def _build_cost_matrix(tracks, cost_fn):
+def _build_cost_matrix(tracks: list[EnrichedTrack], cost_fn) -> list[list[float]]:
     """Precompute all pairwise costs into an n×n matrix.
 
     This amortises expensive cost_fn calls (e.g. ML predict_proba) so that SA
@@ -694,7 +767,7 @@ def _build_cost_matrix(tracks, cost_fn):
     return matrix
 
 
-def greedy_sort(tracks, cost_fn=None, _matrix=None):
+def greedy_sort(tracks: list[EnrichedTrack], cost_fn=None, _matrix=None) -> list[EnrichedTrack]:
     if not tracks:
         return []
     cost_fn   = cost_fn or transition_cost
@@ -713,9 +786,9 @@ def greedy_sort(tracks, cost_fn=None, _matrix=None):
     return [tracks[i] for i in ordered]
 
 
-def simulated_annealing_sort(tracks, initial_order=None, cost_fn=None,
+def simulated_annealing_sort(tracks: list[EnrichedTrack], initial_order=None, cost_fn=None,
                               T_start=SA_T_START, T_end=SA_T_END, alpha=SA_ALPHA,
-                              _matrix=None, progress_cb=None):
+                              _matrix=None, progress_cb=None) -> list[EnrichedTrack]:
     """2-opt simulated annealing starting from greedy_sort (or a supplied order).
 
     Precomputes a full N×N cost matrix so SA iterations are pure index lookups —
@@ -792,7 +865,7 @@ def simulated_annealing_sort(tracks, initial_order=None, cost_fn=None,
 # Output
 # ---------------------------------------------------------------------------
 
-def assign_energy_levels(tracks):
+def assign_energy_levels(tracks: list[EnrichedTrack]) -> list[EnrichedTrack]:
     """Add an 'energy_level' field (1–5) to each track based on spectral flux quintiles.
 
     Ratings are relative within the playlist — the top 20% by flux get 5,

@@ -8,7 +8,15 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+*.egg
 venv/
+.Python
+pip-log.txt
+pip-wheel-metadata/
+
+# Type checking / linting caches
+.mypy_cache/
+.ruff_cache/
 
 # Testing
 .pytest_cache/
@@ -38,6 +46,9 @@ test-results/
 
 # Claude Code
 .claude/
+
+# Qwen Code
+.qwen/
 
 # Build
 build_macos.sh

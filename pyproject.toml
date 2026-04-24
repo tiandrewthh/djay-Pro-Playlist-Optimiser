@@ -1,0 +1,40 @@
+[project]
+name = "dj-playlist-optimiser"
+version = "0.1.0"
+description = "Reorder djay Pro playlists for smoother DJ sets using Camelot key compatibility, BPM progression, and energy flow."
+requires-python = ">=3.9,<3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "librosa>=0.11.0",
+    "numpy>=1.26.0",
+    "scikit-learn>=1.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.9.0",
+    "pre-commit>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "RUF",   # ruff-specific
+]
+ignore = [
+    "E501",  # line length (handled by formatter)
+]

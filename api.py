@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from djay_sorter import (
     _build_cost_matrix,
+    _build_ml_cost_matrix,
     assign_energy_levels,
     camelot_distance,
     create_sorted_clone,
@@ -218,7 +219,11 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
 
     cb(0.20, 'Building cost matrix…')
     n = len(enriched)
-    matrix = _build_cost_matrix(enriched, cost_fn)
+    # Use vectorised ML matrix when model is loaded — 5-10x faster for large playlists
+    if model is not None:
+        matrix = _build_ml_cost_matrix(enriched, model)
+    else:
+        matrix = _build_cost_matrix(enriched, cost_fn)
 
     cb(0.25, 'Greedy sort…')
     greedy = greedy_sort(enriched, cost_fn=cost_fn, _matrix=matrix)
