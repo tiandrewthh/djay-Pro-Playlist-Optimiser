@@ -134,6 +134,10 @@ class ExportRequest(BaseModel):
     tracks: list[Track]
 
 
+class ConfigRequest(BaseModel):
+    db_path: Optional[str] = None
+
+
 class SkipDetail(BaseModel):
     reason: str
     tracks: list[str]
@@ -280,6 +284,8 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
 
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
+JOB_CLEANUP_INTERVAL = 300   # 5 minutes
+JOB_TTL              = 900   # 15 minutes
 
 
 def _run_job(job_id: str, req: SortRequest) -> None:
@@ -301,13 +307,13 @@ def _cleanup_jobs():
     """Background worker to evict old jobs from memory to prevent leaks."""
     while True:
         try:
-            time.sleep(300)  # Run every 5 minutes
+            time.sleep(JOB_CLEANUP_INTERVAL)
             now = time.time()
             with _jobs_lock:
                 to_delete = [
                     jid for jid, data in _jobs.items()
                     if data.get('status') in ('done', 'error')
-                    and now - data.get('finished_at', 0) > 900  # Evict after 15 minutes
+                    and now - data.get('finished_at', 0) > JOB_TTL
                 ]
                 for jid in to_delete:
                     del _jobs[jid]
@@ -345,8 +351,9 @@ def get_config():
 
 
 @app.post('/config')
-def set_config(config: dict):
-    new_path = config.get('db_path')
+@handle_djay_errors
+def set_config(config: ConfigRequest):
+    new_path = config.db_path
     if new_path and not os.path.exists(new_path):
         raise HTTPException(status_code=400, detail='The provided path does not exist on this machine.')
     app_config['db_path'] = new_path

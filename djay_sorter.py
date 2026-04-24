@@ -317,7 +317,7 @@ def enrich_with_keys(tracks, progress_cb=None):
                     progress_cb(done[0] / total, f'Analysing {done[0]}/{total}…')
 
     # Parallelise I/O-bound audio loading across up to 4 threads
-    workers = min(4, len(to_analyse)) if to_analyse else 1
+    workers = min(MAX_ANALYSIS_WORKERS, len(to_analyse)) if to_analyse else 1
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         pool.map(_analyse, to_analyse)
 
@@ -656,18 +656,18 @@ def camelot_distance(c1, c2):
     return num_diff + (0.0 if l1 == l2 else 0.5)
 
 
-def transition_cost(a, b, bpm_w=0.30, key_w=0.50, flux_w=0.12, spectral_w=0.08):
+def transition_cost(a, b, bpm_w=BPM_W, key_w=KEY_W, flux_w=FLUX_W, spectral_w=SPECTRAL_W):
     bpm_diff = min(
         abs(a['tempo'] - b['tempo']),
         abs(a['tempo'] - b['tempo'] * 2),
         abs(a['tempo'] * 2 - b['tempo']),
     )
-    bpm_cost      = bpm_diff / 140.0
-    key_cost      = camelot_distance(a['camelot'], b['camelot']) / 6.0
-    # Spectral flux gap: typical range 0–10 → normalise by 10
-    flux_cost     = abs(a.get('spectral_flux', 0) - b.get('spectral_flux', 0)) / 10.0
-    # Spectral centroid: typical range 500–4000 Hz → normalise by 3500
-    spectral_cost = abs(a.get('spectral_centroid', 2000) - b.get('spectral_centroid', 2000)) / 3500.0
+    bpm_cost      = bpm_diff / BPM_NORMALISATION
+    key_cost      = camelot_distance(a['camelot'], b['camelot']) / KEY_NORMALISATION
+    # Spectral flux gap: typical range 0–10 → normalise by FLUX_NORMALISATION
+    flux_cost     = abs(a.get('spectral_flux', 0) - b.get('spectral_flux', 0)) / FLUX_NORMALISATION
+    # Spectral centroid: typical range 500–4000 Hz → normalise by CENTROID_NORMALISATION
+    spectral_cost = abs(a.get('spectral_centroid', 2000) - b.get('spectral_centroid', 2000)) / CENTROID_NORMALISATION
     return bpm_w * bpm_cost + key_w * key_cost + flux_w * flux_cost + spectral_w * spectral_cost
 
 
@@ -714,7 +714,7 @@ def greedy_sort(tracks, cost_fn=None, _matrix=None):
 
 
 def simulated_annealing_sort(tracks, initial_order=None, cost_fn=None,
-                              T_start=1.0, T_end=0.001, alpha=0.995,
+                              T_start=SA_T_START, T_end=SA_T_END, alpha=SA_ALPHA,
                               _matrix=None, progress_cb=None):
     """2-opt simulated annealing starting from greedy_sort (or a supplied order).
 
