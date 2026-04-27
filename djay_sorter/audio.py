@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 def load_key_cache():
+    """Load the cached audio feature cache from disk.
+
+    Returns:
+        Dict mapping file paths to cached feature dicts. Returns empty dict
+        if the cache file does not exist.
+    """
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE) as f:
             return json.load(f)
@@ -29,7 +35,14 @@ def load_key_cache():
 
 
 def save_key_cache(cache):
-    # Evict oldest entries if cache exceeds max size
+    """Persist the audio feature cache to disk, evicting old entries if full.
+
+    If the cache exceeds CACHE_MAX_ENTRIES entries, the oldest entries
+    (by modification time) are removed before writing.
+
+    Args:
+        cache: Dict mapping file paths to cached feature dicts.
+    """
     if len(cache) > CACHE_MAX_ENTRIES:
         sorted_paths = sorted(cache.keys(), key=lambda p: cache.get(p, {}).get('mtime', '0'))
         to_remove = len(cache) - CACHE_MAX_ENTRIES

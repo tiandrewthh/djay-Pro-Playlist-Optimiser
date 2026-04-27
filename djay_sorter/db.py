@@ -13,6 +13,18 @@ logger = logging.getLogger(__name__)
 
 
 def open_djay_db(custom_path=None):
+    """Open a read-only connection to the djay Pro SQLite database.
+
+    Args:
+        custom_path: Optional path to MediaLibrary.db. If not provided,
+            defaults to ~/Music/djay/djay Media Library.djayMediaLibrary/MediaLibrary.db.
+
+    Returns:
+        sqlite3.Connection with PRAGMA query_only enabled.
+
+    Raises:
+        FileNotFoundError: If the database file does not exist at the given path.
+    """
     path = custom_path or os.path.expanduser(
         '~/Music/djay/djay Media Library.djayMediaLibrary/MediaLibrary.db'
     )
@@ -24,6 +36,15 @@ def open_djay_db(custom_path=None):
 
 
 def list_playlists(db):
+    """Return all playlists with track counts, sorted alphabetically by name.
+
+    Args:
+        db: An sqlite3.Connection to the djay Pro database.
+
+    Returns:
+        List of (rowid, name, track_count) tuples. Only playlists with at
+        least one track are included.
+    """
     rows = db.execute('''
         SELECT p.rowid, p.name, COUNT(r.src) as track_count
         FROM secondaryIndex_mediaItemPlaylistIndex p

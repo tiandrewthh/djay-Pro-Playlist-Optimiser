@@ -206,6 +206,16 @@ def _run_sort(db, playlist_choice, output_name, sa_runs, dry_run, export_path=No
 
 
 def main():
+    """CLI entry point — dispatches to sort, list, or train subcommands.
+    
+    If no subcommand is given, falls back to interactive sort mode where
+    the user is prompted for playlist selection and output name.
+    
+    Subcommands:
+        sort <playlist>  — Sort a playlist by name or ID
+        list             — Show all playlists in the library
+        train            — Train an ML transition model from set history
+    """
     parser, args = _parse_args()
 
     # No subcommand → interactive sort (backwards-compatible behaviour)
