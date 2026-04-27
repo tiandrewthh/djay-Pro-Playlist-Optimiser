@@ -4,6 +4,7 @@ Run locally:  uvicorn api:app --reload
 """
 from __future__ import annotations
 
+import inspect
 import io
 import threading
 import uuid
@@ -101,25 +102,44 @@ def root():
 from functools import wraps
 
 
+def _map_error(e: Exception) -> None:
+    """Convert common exceptions to appropriate HTTP status codes."""
+    if isinstance(e, HTTPException):
+        raise
+    if isinstance(e, ValueError):
+        raise HTTPException(status_code=400, detail=str(e))
+    if isinstance(e, FileNotFoundError):
+        raise HTTPException(status_code=503, detail=str(e))
+    if isinstance(e, sqlite3.OperationalError):
+        if 'locked' in str(e).lower():
+            raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
+        raise HTTPException(status_code=500, detail=str(e))
+    if isinstance(e, RuntimeError):
+        raise HTTPException(status_code=409, detail=str(e))
+    raise HTTPException(status_code=500, detail=str(e))
+
+
 def handle_djay_errors(func):
-    """Wrap endpoint logic to map common exceptions to HTTP status codes."""
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except FileNotFoundError as e:
-            raise HTTPException(status_code=503, detail=str(e))
-        except sqlite3.OperationalError as e:
-            if 'locked' in str(e).lower():
-                raise HTTPException(status_code=503, detail='djay Pro database is locked. Please close djay Pro and try again.')
-            raise HTTPException(status_code=500, detail=str(e))
-        except RuntimeError as e:
-            raise HTTPException(status_code=409, detail=str(e))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    return wrapper
+    """Wrap endpoint logic to map common exceptions to HTTP status codes.
+
+    Supports both sync and async (coroutine) endpoints.
+    """
+    if inspect.iscoroutinefunction(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                _map_error(e)
+        return async_wrapper
+    else:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                _map_error(e)
+        return wrapper
 
 
 # ---------------------------------------------------------------------------
