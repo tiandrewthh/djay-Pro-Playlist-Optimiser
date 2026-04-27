@@ -233,6 +233,16 @@
       color: #fff;
     }
 
+    /* ── Cascading track row reveal ── */
+    @keyframes cascadeIn {
+      from { opacity: 0; transform: translateX(-10px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    .track-row-animated {
+      opacity: 0;
+      animation: cascadeIn 0.3s forwards ease-out;
+    }
+
     /* ── Transition rows ── */
     .tr-row td {
       padding: 0 10px;
@@ -1123,6 +1133,8 @@
     data.tracks.forEach((t, i) => {
       // Track row
       const tr = document.createElement('tr');
+      tr.className = 'track-row-animated';
+      tr.style.animationDelay = `${i * 30}ms`;
       const keyColor = CAMELOT_COLORS[t.camelot] ?? '#555';
       tr.dataset.index = i;
       tr.onmouseenter = () => highlightChartDot(i);
