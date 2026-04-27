@@ -390,6 +390,98 @@
       color: var(--text);
     }
 
+    /* ── Toast Notifications ── */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: rgba(32, 32, 38, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 280px;
+      max-width: 360px;
+      pointer-events: auto;
+      animation: toastSlideIn 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error   { border-left: 3px solid var(--red); }
+    .toast.info    { border-left: 3px solid var(--accent); }
+
+    .toast.removing {
+      animation: toastSlideOut 0.2s ease forwards;
+    }
+
+    @keyframes toastSlideIn {
+      from { opacity: 0; transform: translateX(100%); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes toastSlideOut {
+      from { opacity: 1; transform: translateX(0); }
+      to   { opacity: 0; transform: translateX(100%); }
+    }
+
+    .toast-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .toast-message {
+      flex: 1;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.4;
+    }
+
+    .toast-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 0 0 8px;
+      line-height: 1;
+    }
+
+    .toast-close:hover { color: var(--text); }
+
+    .toast-progress {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 2px;
+      background: rgba(255,255,255,0.3);
+      width: 100%;
+      transform-origin: left;
+      animation: toastProgress 4s linear forwards;
+    }
+
+    .toast:hover .toast-progress {
+      animation-play-state: paused;
+    }
+
+    @keyframes toastProgress {
+      from { transform: scaleX(1); }
+      to   { transform: scaleX(0); }
+    }
+
     /* ── Error / warning banners ── */
     .error, .warning {
       border-radius: 6px;
@@ -1016,6 +1108,9 @@
       });
 
       renderResults(lastResult);
+      const impr = lastResult.improvement_pct;
+      const sign = impr > 0 ? '+' : '';
+      showToast(`Sorted ${lastResult.tracks.length} tracks (${sign}${impr.toFixed(0)}% improvement)`, 'success');
     } catch (e) {
       showErr(friendlyError(e.message));
       progressWrap.classList.add('hidden');
@@ -1072,9 +1167,9 @@
             throw new Error(body.detail || 'Export failed');
           }
 
-          alert(`Successfully exported as "${name}"!`);
+          showToast(`Successfully exported as "${name}" to djay Pro`, 'success');
         } catch (e) {
-          showErr(friendlyError('Export failed: ' + e.message));
+          showToast(friendlyError('Export failed: ' + e.message), 'error');
         } finally {
           btnExportDjay.disabled = false;
           btnExportDjay.textContent = originalText;
@@ -1176,6 +1271,9 @@
 
         // Update chart
         drawChart(lastResult.tracks);
+
+        // Show feedback
+        showToast(`Track moved to position #${newIndex + 1}`, 'info');
       }
 
       return false;
@@ -1693,9 +1791,7 @@
       .map((t, i) => `${i + 1}. ${t.artist ? t.artist + ' – ' : ''}${t.name}  (${t.bpm.toFixed(1)} BPM  ${t.camelot})`)
       .join('\n');
     navigator.clipboard.writeText(text).then(() => {
-      const btn = document.getElementById('btn-copy-list');
-      btn.textContent = 'Copied!';
-      setTimeout(() => { btn.textContent = 'Copy text list'; }, 2000);
+      showToast('Track list copied to clipboard', 'success');
     });
   });
 
@@ -1801,6 +1897,58 @@
     window.addEventListener('resize', () => { wSetSize(); wSetLines(); });
 
     wSetSize(); wSetLines(); requestAnimationFrame(wTick);
+  }
+
+  // ── Toast Notifications ────────────────────────────────────────────────────
+  const toastContainer = document.createElement('div');
+  toastContainer.id = 'toast-container';
+  document.body.appendChild(toastContainer);
+
+  const MAX_TOASTS = 3;
+  let toastCounter = 0;
+
+  function showToast(message, type = 'info', duration = 4000) {
+    // Remove oldest if at limit
+    while (toastContainer.children.length >= MAX_TOASTS) {
+      removeToast(toastContainer.firstElementChild);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.id = `toast-${++toastCounter}`;
+
+    const icons = {
+      success: '✓',
+      error: '✕',
+      info: 'ℹ'
+    };
+
+    toast.innerHTML = `
+      <span class="toast-icon">${icons[type]}</span>
+      <span class="toast-message">${esc(message)}</span>
+      <button class="toast-close" aria-label="Dismiss">×</button>
+      <div class="toast-progress"></div>
+    `;
+
+    // Click to dismiss
+    toast.querySelector('.toast-close').addEventListener('click', () => removeToast(toast));
+
+    // Auto dismiss
+    let timeoutId = setTimeout(() => removeToast(toast), duration);
+
+    // Pause on hover
+    toast.addEventListener('mouseenter', () => clearTimeout(timeoutId));
+    toast.addEventListener('mouseleave', () => {
+      timeoutId = setTimeout(() => removeToast(toast), duration);
+    });
+
+    toastContainer.appendChild(toast);
+  }
+
+  function removeToast(toast) {
+    if (!toast || toast.classList.contains('removing')) return;
+    toast.classList.add('removing');
+    setTimeout(() => toast.remove(), 200);
   }
 </script>
 

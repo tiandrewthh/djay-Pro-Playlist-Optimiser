@@ -53,6 +53,9 @@ SESSION_SUMMARY.md
 # Qwen Code
 .qwen/
 
+# Kilo Code
+.kilo/
+
 # Build
 build_macos.sh
 build_output/
