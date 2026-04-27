@@ -354,6 +354,42 @@
       position: relative;
     }
 
+    /* ── Drag and Drop ── */
+    .track-row-animated {
+      cursor: grab;
+      transition: transform 0.1s, box-shadow 0.1s, opacity 0.2s;
+    }
+    .track-row-animated:active {
+      cursor: grabbing;
+    }
+    .track-row-animated.dragging {
+      opacity: 0.5;
+      transform: scale(0.98);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      background: var(--surface2) !important;
+      z-index: 100;
+      position: relative;
+    }
+    .track-row-animated.drag-over {
+      border-top: 2px solid var(--accent);
+    }
+    .track-row-animated.drag-over-bottom {
+      border-bottom: 2px solid var(--accent);
+    }
+    .drag-handle {
+      cursor: grab;
+      color: var(--muted);
+      font-size: 12px;
+      padding-right: 8px;
+      user-select: none;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+    .track-row-animated:hover .drag-handle {
+      color: var(--text);
+    }
+
     /* ── Error / warning banners ── */
     .error, .warning {
       border-radius: 6px;
@@ -1048,7 +1084,197 @@
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+    // ── Drag and Drop ──────────────────────────────────────────────────────────
+
+    let dragSrcEl = null;
+    let dragSrcIndex = -1;
+
+    function handleDragStart(e) {
+      dragSrcEl = this;
+      dragSrcIndex = parseInt(this.dataset.index);
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/html', this.outerHTML);
+      this.classList.add('dragging');
+    }
+
+    function handleDragEnd(e) {
+      this.classList.remove('dragging');
+      document.querySelectorAll('.track-row-animated').forEach(row => {
+        row.classList.remove('drag-over', 'drag-over-bottom');
+      });
+      dragSrcEl = null;
+      dragSrcIndex = -1;
+    }
+
+    function handleDragOver(e) {
+      if (e.preventDefault) {
+        e.preventDefault();
+      }
+      e.dataTransfer.dropEffect = 'move';
+
+      const row = this.closest('.track-row-animated');
+      if (!row || row === dragSrcEl) return;
+
+      const rect = row.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+
+      document.querySelectorAll('.track-row-animated').forEach(r => {
+        r.classList.remove('drag-over', 'drag-over-bottom');
+      });
+
+      if (e.clientY < midpoint) {
+        row.classList.add('drag-over');
+      } else {
+        row.classList.add('drag-over-bottom');
+      }
+
+      return false;
+    }
+
+    function handleDragEnter(e) {
+      // Visual feedback handled in dragOver
+    }
+
+    function handleDragLeave(e) {
+      const row = this.closest('.track-row-animated');
+      if (row) {
+        row.classList.remove('drag-over', 'drag-over-bottom');
+      }
+    }
+
+    function handleDrop(e) {
+      if (e.stopPropagation) {
+        e.stopPropagation();
+      }
+
+      const dropRow = this.closest('.track-row-animated');
+      if (!dropRow || dropRow === dragSrcEl) {
+        return false;
+      }
+
+      const dropIndex = parseInt(dropRow.dataset.index);
+      const rect = dropRow.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      const insertAfter = e.clientY >= midpoint;
+
+      // Calculate new index
+      let newIndex = insertAfter ? dropIndex + 1 : dropIndex;
+      if (dragSrcIndex < newIndex) {
+        newIndex--;
+      }
+
+      // Reorder the tracks array
+      if (lastResult && lastResult.tracks) {
+        const [movedTrack] = lastResult.tracks.splice(dragSrcIndex, 1);
+        lastResult.tracks.splice(newIndex, 0, movedTrack);
+
+        // Recalculate transition costs for all adjacent pairs
+        recalculateTransitions();
+
+        // Re-render the table (no animation for drag-and-drop)
+        renderTrackTable(lastResult.tracks, false);
+
+        // Update chart
+        drawChart(lastResult.tracks);
+      }
+
+      return false;
+    }
+
+    function recalculateTransitions() {
+      // Recalculate BPM jumps and key clashes for statistics
+      let totalBpmJump = 0;
+      let maxBpmJump = 0;
+      let keyClashes = 0;
+
+      for (let i = 0; i < lastResult.tracks.length - 1; i++) {
+        const t = lastResult.tracks[i];
+        const next = lastResult.tracks[i + 1];
+        const bpmDelta = Math.abs(t.bpm - next.bpm);
+        const keyDist = camelotDist(t.camelot, next.camelot);
+
+        totalBpmJump += bpmDelta;
+        maxBpmJump = Math.max(maxBpmJump, bpmDelta);
+        if (keyDist > 1) keyClashes++;
+      }
+
+      // Update stats display
+      const avgBpmJump = lastResult.tracks.length > 1 ? totalBpmJump / (lastResult.tracks.length - 1) : 0;
+      animateValue('s-clashes', 0, keyClashes, 600, '');
+      animateValue('s-avg-bpm', 0, avgBpmJump, 800, ' BPM');
+      animateValue('s-max-bpm', 0, maxBpmJump, 700, ' BPM');
+
+      // Update clash color
+      const clashEl = document.getElementById('s-clashes');
+      clashEl.style.color = keyClashes > 0 ? 'var(--red)' : 'var(--text)';
+    }
+
+    function renderTrackTable(tracks, animate = false) {
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+      const fragment = document.createDocumentFragment();
+
+      tracks.forEach((t, i) => {
+        // Track row
+        const tr = document.createElement('tr');
+        tr.className = 'track-row-animated';
+        if (animate) {
+          tr.style.animationDelay = `${i * 30}ms`;
+        } else {
+          tr.style.animationDelay = '0ms';
+          tr.style.opacity = '1';
+        }
+        tr.draggable = true;
+        tr.dataset.index = i;
+        const keyColor = CAMELOT_COLORS[t.camelot] ?? '#555';
+
+        tr.addEventListener('dragstart', handleDragStart);
+        tr.addEventListener('dragend', handleDragEnd);
+        tr.addEventListener('dragenter', handleDragEnter);
+        tr.addEventListener('dragleave', handleDragLeave);
+        tr.addEventListener('dragover', handleDragOver);
+        tr.addEventListener('drop', handleDrop);
+
+        tr.onmouseenter = () => highlightChartDot(i);
+        tr.onmouseleave = () => clearChartHighlight();
+
+        tr.innerHTML = `
+          <td><span class="drag-handle">⋮⋮</span>${i + 1}</td>
+          <td class="wrap">${esc(t.name)}</td>
+          <td class="wrap">${esc(t.artist)}</td>
+          <td>${t.bpm.toFixed(1)}</td>
+          <td><span class="key-badge" style="background:${keyColor}">${esc(t.camelot)}</span></td>
+          <td>${pips(t.energy_level ?? 0)}</td>
+        `;
+        fragment.appendChild(tr);
+
+        // Transition row
+        if (i < tracks.length - 1) {
+          const next = tracks[i + 1];
+          const bpmDelta = Math.abs(t.bpm - next.bpm);
+          const dist = camelotDist(t.camelot, next.camelot);
+
+          const bpmColor = bpmDelta > 20 ? '#ef4444' : bpmDelta > 10 ? '#f59e0b' : 'var(--border)';
+          const keyClass = dist <= 1 ? 'tr-good' : dist === 2 ? 'tr-ok' : 'tr-clash';
+          const keySymbol = dist <= 1 ? '✓' : dist === 2 ? '~' : '✗';
+
+          const tt = document.createElement('tr');
+          tt.className = 'tr-row';
+          tt.innerHTML = `
+            <td></td>
+            <td colspan="2"></td>
+            <td><span style="color:${bpmColor};font-family:var(--mono)">±${bpmDelta.toFixed(0)}</span></td>
+            <td>
+              <span class="tr-pill ${keyClass}">${keySymbol} ${esc(t.camelot)}→${esc(next.camelot)}</span>
+            </td>
+            <td></td>
+          `;
+          fragment.appendChild(tt);
+        }
+      });
+
+      tbody.appendChild(fragment);
+    }
 
   function revealCard(el) {
     el.classList.remove('hidden');
@@ -1061,6 +1287,8 @@
   }
 
   function renderResults(data) {
+    lastResult = data;
+
     // ── Stats (animated count-up) ───────────────────────────────────────────
     const sign   = data.improvement_pct > 0 ? '+' : '';
     const imprEl = document.getElementById('s-impr');
@@ -1125,56 +1353,8 @@
     revealCard(resultsSummaryCard);
     requestAnimationFrame(() => drawChart(data.tracks));
 
-    // ── Build table via DocumentFragment ────────────────────────────────────
-    const tbody = document.getElementById('tbody');
-    tbody.innerHTML = '';
-    const fragment = document.createDocumentFragment();
-
-    data.tracks.forEach((t, i) => {
-      // Track row
-      const tr = document.createElement('tr');
-      tr.className = 'track-row-animated';
-      tr.style.animationDelay = `${i * 30}ms`;
-      const keyColor = CAMELOT_COLORS[t.camelot] ?? '#555';
-      tr.dataset.index = i;
-      tr.onmouseenter = () => highlightChartDot(i);
-      tr.onmouseleave = () => clearChartHighlight();
-      tr.innerHTML = `
-        <td>${i + 1}</td>
-        <td class="wrap">${esc(t.name)}</td>
-        <td class="wrap">${esc(t.artist)}</td>
-        <td>${t.bpm.toFixed(1)}</td>
-        <td><span class="key-badge" style="background:${keyColor}">${esc(t.camelot)}</span></td>
-        <td>${pips(t.energy_level ?? 0)}</td>
-      `;
-      fragment.appendChild(tr);
-
-      // Transition row
-      if (i < data.tracks.length - 1) {
-        const next      = data.tracks[i + 1];
-        const bpmDelta  = Math.abs(t.bpm - next.bpm);
-        const dist      = camelotDist(t.camelot, next.camelot);
-        
-        const bpmColor  = bpmDelta > 20 ? '#ef4444' : bpmDelta > 10 ? '#f59e0b' : 'var(--border)';
-        const keyClass  = dist <= 1 ? 'tr-good' : dist === 2 ? 'tr-ok' : 'tr-clash';
-        const keySymbol = dist <= 1 ? '✓' : dist === 2 ? '~' : '✗';
-
-        const tt = document.createElement('tr');
-        tt.className = 'tr-row';
-        tt.innerHTML = `
-          <td></td>
-          <td colspan="2"></td>
-          <td><span style="color:${bpmColor};font-family:var(--mono)">±${bpmDelta.toFixed(0)}</span></td>
-          <td>
-            <span class="tr-pill ${keyClass}">${keySymbol} ${esc(t.camelot)}→${esc(next.camelot)}</span>
-          </td>
-          <td></td>
-        `;
-        fragment.appendChild(tt);
-      }
-    });
-
-    tbody.appendChild(fragment);
+    // ── Render table with drag and drop (with cascade animation) ────────────
+    renderTrackTable(data.tracks, true);
 
     // ── Reveal tracklist card ────────────────────────────────────────────────
     revealCard(resultsCard);
