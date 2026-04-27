@@ -253,53 +253,6 @@
     .tr-ok    { color: #f59e0b; }
     .tr-clash { color: #ef4444; }
 
-    /* ── Drag-and-drop ── */
-    .drag-handle {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      cursor: grab;
-      width: 18px;
-      height: 18px;
-      color: var(--muted);
-      opacity: 0;
-      transition: opacity 0.15s;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-    tr:not(.tr-row):hover .drag-handle { opacity: 1; }
-    .drag-handle:active { cursor: grabbing; }
-    .drag-handle svg { pointer-events: none; }
-
-    tr.dragging {
-      opacity: 0.4;
-    }
-
-    .drop-indicator {
-      height: 2px !important;
-      background: var(--accent);
-      border-radius: 1px;
-      display: block;
-      margin: 0 10px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.1s;
-    }
-    .drop-indicator.visible {
-      opacity: 1;
-    }
-
-    tr.drop-target-above { box-shadow: 0 -1px 0 0 var(--accent); }
-    tr.drop-target-below { box-shadow: 0 1px 0 0 var(--accent); }
-
-    /* ── Reorder hint ── */
-    .reorder-hint {
-      font-size: 10px;
-      color: var(--muted);
-      font-style: italic;
-      margin-top: 4px;
-    }
-
     /* energy pips */
     .pips { display: inline-flex; gap: 2px; vertical-align: middle; }
     .pip { width: 5px; height: 11px; border-radius: 2px; background: var(--border); }
@@ -687,10 +640,7 @@
   <!-- Tracklist card -->
   <div class="card hidden" id="results-card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <div style="display:flex;align-items:baseline;gap:12px">
-        <div class="card-label" id="results-label" style="margin-bottom:0">Sorted tracklist</div>
-        <div class="reorder-hint" id="reorder-hint">Drag ⠿ to reorder</div>
-      </div>
+      <div class="card-label" id="results-label" style="margin-bottom:0">Sorted tracklist</div>
       <div style="display:flex;gap:8px">
         <button class="btn-copy" id="btn-copy-list">Copy text list</button>
         <button class="btn-copy hidden" id="btn-m3u">Download M3U</button>
@@ -1175,16 +1125,10 @@
       const tr = document.createElement('tr');
       const keyColor = CAMELOT_COLORS[t.camelot] ?? '#555';
       tr.dataset.index = i;
-      tr.draggable = true;
-      tr.addEventListener('dragstart', onDragStart);
-      tr.addEventListener('dragover', onDragOver);
-      tr.addEventListener('dragleave', onDragLeave);
-      tr.addEventListener('drop', onDrop);
-      tr.addEventListener('dragend', onDragEnd);
       tr.onmouseenter = () => highlightChartDot(i);
       tr.onmouseleave = () => clearChartHighlight();
       tr.innerHTML = `
-        <td style="vertical-align:middle"><span class="drag-handle" tabindex="0" aria-label="Drag to reorder row ${i + 1}"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 2.5h6M4 7h6M4 11.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>${i + 1}</td>
+        <td>${i + 1}</td>
         <td class="wrap">${esc(t.name)}</td>
         <td class="wrap">${esc(t.artist)}</td>
         <td>${t.bpm.toFixed(1)}</td>
@@ -1410,115 +1354,6 @@
   });
 
   window.addEventListener('resize', () => { if (_chartTracks.length) drawChart(_chartTracks); });
-
-  // ── Drag-and-drop reordering ───────────────────────────────────────────────
-
-  // _dragging: data object for the track being dragged
-  let _dragging = null;  // { index }
-
-  // _draggingEl: the <tr> element being dragged
-  let _draggingEl = null;
-
-  function onDragStart(e) {
-    const tr = e.target.closest('tr');
-    if (!tr || tr.classList.contains('tr-row')) return;
-    // Only allow dragging from the handle cell
-    const handle = e.target.closest('.drag-handle');
-    if (!handle) return;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', '');
-    _dragging = { index: parseInt(tr.dataset.index) };
-    _draggingEl = tr;
-    requestAnimationFrame(() => tr.classList.add('dragging'));
-  }
-
-  function onDragOver(e) {
-    if (!_dragging) return;
-    const targetTr = e.target.closest('tr');
-    if (!targetTr || targetTr === _draggingEl || targetTr.classList.contains('tr-row')) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    // Remove existing drop targets
-    document.querySelectorAll('.drop-target-above, .drop-target-below')
-      .forEach(el => el.classList.remove('drop-target-above', 'drop-target-below'));
-
-    // Determine above/below based on mouse Y position within the row
-    const rect = targetTr.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    if (e.clientY < midY) {
-      targetTr.classList.add('drop-target-above');
-    } else {
-      targetTr.classList.add('drop-target-below');
-    }
-  }
-
-  function onDragLeave(e) {
-    if (!_dragging) return;
-    const targetTr = e.target.closest('tr');
-    if (targetTr) targetTr.classList.remove('drop-target-above', 'drop-target-below');
-  }
-
-  function onDrop(e) {
-    if (!_dragging) return;
-    e.preventDefault();
-    const targetTr = e.target.closest('tr');
-    if (!targetTr || targetTr === _draggingEl || targetTr.classList.contains('tr-row')) return;
-
-    const targetIndex = parseInt(targetTr.dataset.index);
-    if (isNaN(targetIndex)) return;
-
-    // Determine if drop is above or below target:
-    // above → dragged item goes into targetIndex position (and target shifts down)
-    // below → dragged item goes into position after targetIndex
-    const above = targetTr.classList.contains('drop-target-above');
-    let newPos = above ? targetIndex : targetIndex + 1;
-
-    applyReorder(_dragging.index, newPos);
-
-    // Clean up drop-target classes
-    targetTr.classList.remove('drop-target-above', 'drop-target-below');
-  }
-
-  function onDragEnd(e) {
-    // Clean up all visual states regardless of drop success
-    if (_draggingEl) _draggingEl.classList.remove('dragging');
-    document.querySelectorAll('.drop-target-above, .drop-target-below')
-      .forEach(el => el.classList.remove('drop-target-above', 'drop-target-below'));
-    _dragging = null;
-    _draggingEl = null;
-  }
-
-  /**
-   * Reorder lastResult.tracks by moving item at `from` to position `to`.
-   * `to` is 0-based: the index the item should occupy after the move.
-   * Then re-renders the table, chart, and stats.
-   */
-  function applyReorder(from, to) {
-    if (!lastResult) return;
-    const tracks = lastResult.tracks;
-    const n = tracks.length;
-    if (from < 0 || from >= n || to < 0 || to >= n) return;
-    if (from === to) return;
-
-    // Remove from current position
-    const [item] = tracks.splice(from, 1);
-
-    // If item was removed from before `to`, `to` shifts down by 1
-    const insertAt = from < to ? to - 1 : to;
-
-    tracks.splice(insertAt, 0, item);
-
-    // Re-render everything with the new order
-    renderResults(lastResult);
-
-    // Show a brief reorder flash
-    const hint = document.getElementById('reorder-hint');
-    if (hint) {
-      hint.textContent = 'Order updated';
-      setTimeout(() => { hint.textContent = 'Drag ⠿ to reorder'; }, 1500);
-    }
-  }
 
   // ── Wire up ────────────────────────────────────────────────────────────────
 
