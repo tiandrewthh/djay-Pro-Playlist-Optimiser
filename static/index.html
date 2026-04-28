@@ -170,10 +170,44 @@
       color: #fff;
       font-weight: 600;
       box-shadow: 0 4px 12px var(--accent-glow);
+      position: relative;
+      overflow: hidden;
+      transform: translateZ(0);
     }
     .btn-primary:hover:not(:disabled) {
       box-shadow: 0 6px 18px var(--accent-glow);
     }
+
+    /* ── Material Ripple Effect ── */
+    .btn-primary .ripple {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.35);
+      transform: scale(0);
+      animation: ripple-anim 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+
+    @keyframes ripple-anim {
+      to {
+        transform: scale(4);
+        opacity: 0;
+      }
+    }
+
+    .btn-primary.loading .ripple,
+    .btn-primary:disabled .ripple {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .btn-primary .ripple {
+        animation: none;
+        opacity: 0;
+      }
+    }
+
     .btn-secondary {
       background: var(--surface2);
       color: var(--text);
@@ -2055,6 +2089,30 @@
     toast.classList.add('removing');
     setTimeout(() => toast.remove(), 200);
   }
+
+  // ── Material Ripple Effect ─────────────────────────────────────────────────
+  function createRipple(e) {
+    const btn = e.currentTarget;
+    if (btn.disabled || btn.classList.contains('loading')) return;
+
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple';
+
+    const rect = btn.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+
+    ripple.style.width = ripple.style.height = `${size}px`;
+    ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
+    ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
+
+    btn.appendChild(ripple);
+
+    ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+  }
+
+  document.querySelectorAll('.btn-primary').forEach(btn => {
+    btn.addEventListener('click', createRipple);
+  });
 </script>
 
 </body>

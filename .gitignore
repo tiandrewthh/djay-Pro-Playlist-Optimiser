@@ -55,6 +55,7 @@ SESSION_SUMMARY.md
 
 # Kilo Code
 .kilo/
+kilo.jsonc
 
 # Build
 build_macos.sh
