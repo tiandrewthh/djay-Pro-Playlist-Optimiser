@@ -24,7 +24,7 @@ Open [http://localhost:8000](http://localhost:8000).
 
 ![Screenshot](images/screenshot.png)
 
-![Demo](https://raw.githubusercontent.com/tiandrewthh/djay-Pro-Playlist-Optimiser/main/images/demo.mp4)
+[![Demo Video](images/thumbnail.jpg)](https://github.com/tiandrewthh/djay-Pro-Playlist-Optimiser/blob/main/images/demo.mp4?raw=true)
 
 ## Requirements
 
