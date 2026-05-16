@@ -1,10 +1,8 @@
 # DJ Playlist Optimiser
 
-[![CI](https://github.com/tiandrewthh/DJ-Playlist-Optimiser/actions/workflows/ci.yml/badge.svg)](https://github.com/tiandrewthh/DJ-Playlist-Optimiser/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.9--3.12-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![codecov](https://codecov.io/gh/tiandrewthh/DJ-Playlist-Optimiser/graph/badge.svg)](https://codecov.io/gh/tiandrewthh/DJ-Playlist-Optimiser)
 
 Reorders djay Pro playlists for smoother DJ sets using Camelot key compatibility,
 BPM progression, and energy flow. Runs a greedy sort followed by simulated
