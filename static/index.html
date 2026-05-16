@@ -344,6 +344,36 @@
 
     /* ── Custom Combobox ── */
     .combobox-container { position: relative; width: 100%; }
+    .combobox-container input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+    .combobox-container input[type="text"]:hover { border-color: var(--muted); }
+    .combobox-container input[type="text"]:focus { outline: none; border-color: #f97316; box-shadow: 0 0 0 2px rgba(249,115,22,0.15); }
+    .combobox-container input[type="text"]::placeholder { color: var(--muted); }
+    .combobox-container input[type="text"] {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+    .combobox-container input[type="text"]:hover { border-color: var(--muted); }
+    .combobox-container input[type="text"]:focus { outline: none; border-color: #f97316; box-shadow: 0 0 0 2px rgba(249,115,22,0.15); }
+    .combobox-container input[type="text"]::placeholder { color: var(--muted); }
     .custom-dropdown {
       position: absolute;
       top: calc(100% + 2px);
@@ -559,7 +589,7 @@
     /* ── New controls layout ── */
     .controls-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 20px;
       margin-bottom: 20px;
     }
@@ -581,6 +611,21 @@
       font-size: 12px;
       flex-shrink: 0;
     }
+
+    .select-input {
+      width: 100%;
+      padding: 8px 10px;
+      margin-top: 4px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .select-input:hover { border-color: var(--muted); }
+    .select-input:focus { outline: none; border-color: #f97316; box-shadow: 0 0 0 2px rgba(249,115,22,0.15); }
 
     /* ── Stats value colour variants ── */
     .value.amber { color: #f59e0b; }
@@ -796,23 +841,6 @@
           <input type="range" id="inp-runs" min="1" max="20" step="1" value="3">
           <span id="runs-val" class="val-display">3</span>
         </div>
-      </div>
-      <div class="field">
-        <label>Max BPM jump <span style="color:var(--muted);font-weight:normal;font-size:10px">(Strict → Loose)</span></label>
-        <div class="slider-container">
-          <input type="range" id="inp-max-bpm" min="5" max="21" step="1" value="5">
-          <span id="bpm-jump-val" class="val-display">5</span>
-        </div>
-      </div>
-      <div class="field">
-        <label>Sort mode</label>
-        <select id="inp-sort-mode" class="select-input">
-          <option value="optimize">Optimize transitions</option>
-          <option value="energy_ascending">Energy ascending</option>
-          <option value="energy_descending">Energy descending</option>
-        </select>
-      </div>
-    </div>
       </div>
       <div class="field">
         <label>Max BPM jump <span style="color:var(--muted);font-weight:normal;font-size:10px">(Strict → Loose)</span></label>
