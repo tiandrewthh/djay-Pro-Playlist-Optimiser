@@ -32,9 +32,7 @@ pip install -r requirements.txt
 uvicorn api:app --reload
 ```
 
-Open [http://localhost:8000](http://localhost:8000).
-
-## Demo
+Open [http://localhost:8000](http://localhost:8000)
 
 ![Screenshot](images/screenshot.png)
 
