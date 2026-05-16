@@ -24,7 +24,6 @@ pip-wheel-metadata/
 htmlcov/
 test-results/
 .hypothesis/
-tests/
 
 # macOS
 .DS_Store
