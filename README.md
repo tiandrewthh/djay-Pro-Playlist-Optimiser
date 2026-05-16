@@ -20,6 +20,12 @@ uvicorn api:app --reload
 
 Open [http://localhost:8000](http://localhost:8000).
 
+## Demo
+
+![Screenshot](images/screenshot.png)
+
+<video src="https://github.com/tiandrewthh/djay-Pro-Playlist-Optimiser/raw/main/images/demo.mp4" controls></video>
+
 ## Requirements
 
 - macOS (djay Pro stores its library in `~/Music/djay/`)
