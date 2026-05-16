@@ -804,6 +804,31 @@
           <span id="bpm-jump-val" class="val-display">5</span>
         </div>
       </div>
+      <div class="field">
+        <label>Sort mode</label>
+        <select id="inp-sort-mode" class="select-input">
+          <option value="optimize">Optimize transitions</option>
+          <option value="energy_ascending">Energy ascending</option>
+          <option value="energy_descending">Energy descending</option>
+        </select>
+      </div>
+    </div>
+      </div>
+      <div class="field">
+        <label>Max BPM jump <span style="color:var(--muted);font-weight:normal;font-size:10px">(Strict → Loose)</span></label>
+        <div class="slider-container">
+          <input type="range" id="inp-max-bpm" min="5" max="21" step="1" value="5">
+          <span id="bpm-jump-val" class="val-display">5</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>Sort mode</label>
+        <select id="inp-sort-mode" class="select-input">
+          <option value="optimize">Optimize transitions</option>
+          <option value="energy_ascending">Energy ascending</option>
+          <option value="energy_descending">Energy descending</option>
+        </select>
+      </div>
     </div>
 
     <div class="btn-row">
@@ -973,6 +998,7 @@
   function hideDropdown() { plDropdown.classList.add('hidden'); dropdownActiveIdx = -1; }
   const inpRuns       = document.getElementById('inp-runs');
   const inpMaxBpm     = document.getElementById('inp-max-bpm');
+  const inpSortMode   = document.getElementById('inp-sort-mode');
   const inpDbPath     = document.getElementById('inp-db-path');
   const btnSavePath   = document.getElementById('btn-save-path');
   const pathStatus    = document.getElementById('path-status');
@@ -1182,6 +1208,7 @@
           playlist_id:  playlistId,
           runs:         parseInt(inpRuns.value) || 3,
           max_bpm_jump: parseInt(inpMaxBpm.value) < 21 ? parseInt(inpMaxBpm.value) : null,
+          sort_mode:    inpSortMode.value,
         }),
       });
       if (!startRes.ok) {

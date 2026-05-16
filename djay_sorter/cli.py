@@ -15,6 +15,7 @@ from .sorting import (
     greedy_sort,
     simulated_annealing_sort,
     assign_energy_levels,
+    sort_by_energy,
 )
 from .export import export_m3u, create_sorted_clone
 
@@ -41,6 +42,12 @@ def _parse_args():
                         help='Show sorted tracklist without writing to djay Pro.')
     sort_p.add_argument('--export', nargs='?', const='', metavar='FILE',
                         help='Export sorted playlist as M3U (default filename: <playlist>.m3u).')
+    sort_p.add_argument('--mode', choices=['optimize', 'energy-ascending', 'energy-descending'],
+                        default='optimize',
+                        help='Sort mode: optimize (default), energy-ascending, or energy-descending.')
+    sort_p.add_argument('--mode', choices=['optimize', 'energy-ascending', 'energy-descending'],
+                        default='optimize',
+                        help='Sort mode: optimize (default), energy-ascending, or energy-descending.')
 
     # ── list ─────────────────────────────────────────────────────────────────
     sub.add_parser('list', help='List all playlists with track counts.')
@@ -115,7 +122,7 @@ def _camelot_distance_for_stats(c1, c2):
     return num_diff + (0.0 if l1 == l2 else 0.5)
 
 
-def _run_sort(db, playlist_choice, output_name, sa_runs, dry_run, export_path=None):
+def _run_sort(db, playlist_choice, output_name, sa_runs, dry_run, export_path=None, sort_mode='optimize'):
     playlists = list_playlists(db)
     if not playlists:
         print("No playlists with local tracks found.")
@@ -150,6 +157,34 @@ def _run_sort(db, playlist_choice, output_name, sa_runs, dry_run, export_path=No
         print("No tracks could be analysed.")
         sys.exit(1)
 
+    # ── Energy-only sort modes (skip greedy+SA pipeline) ────────────────────
+    if sort_mode in ('energy-ascending', 'energy-descending'):
+        ascending = sort_mode == 'energy-ascending'
+        print(f"\nSorting by energy ({'increasing' if ascending else 'decreasing'})…")
+        sa = sort_by_energy(enriched, ascending=ascending)
+        assign_energy_levels(sa)
+        _print_tracklist(sa)
+
+        if export_path is not None:
+            if not export_path:
+                safe = re.sub(r'[^\w\s-]', '', pl_name).strip().replace(' ', '_')
+                export_path = f"{safe}.m3u"
+            export_m3u(sa, export_path)
+
+        if dry_run:
+            print("\n--dry-run: skipping write to djay Pro.")
+            return
+
+        default_name = output_name or f"{pl_name} (Energy {'↑' if ascending else '↓'})"
+        if output_name is None:
+            print(f"\nNew playlist name [{default_name}]: ", end='', flush=True)
+            entered = input().strip()
+            default_name = entered or default_name
+
+        create_sorted_clone(pl_rowid, sa, default_name)
+        return
+
+    # ── Standard optimize mode (greedy + SA) ────────────────────────────────
     model = load_transition_model()
     if model is not None:
         cost_fn    = lambda a, b: ml_transition_cost(a, b, model)
@@ -262,6 +297,7 @@ def main():
             sa_runs=args.runs,
             dry_run=args.dry_run,
             export_path=args.export,
+            sort_mode=args.mode,
         )
 
 

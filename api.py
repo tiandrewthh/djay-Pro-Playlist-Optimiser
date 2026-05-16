@@ -38,6 +38,7 @@ from djay_sorter import (
     ml_transition_cost,
     open_djay_db,
     simulated_annealing_sort,
+    sort_by_energy,
     transition_cost,
 )
 
@@ -166,6 +167,7 @@ class SortRequest(BaseModel):
     playlist_id: int
     runs: int = Field(default=3, ge=1, le=20)
     max_bpm_jump: Optional[float] = None  # None = no limit
+    sort_mode: str = Field(default='optimize', pattern='^(optimize|energy_ascending|energy_descending)$')
 
 
 class ExportRequest(BaseModel):
@@ -240,6 +242,53 @@ def _do_sort(req: SortRequest, progress_cb=None) -> dict:
     if not enriched:
         raise ValueError('No tracks could be analysed.')
 
+    # ── Energy-only sort modes (skip greedy+SA pipeline) ────────────────────
+    if req.sort_mode in ('energy_ascending', 'energy_descending'):
+        ascending = req.sort_mode == 'energy_ascending'
+        cb(0.25, f'Sorting by energy ({'increasing' if ascending else 'decreasing'})…')
+        best_sa = sort_by_energy(enriched, ascending=ascending)
+        assign_energy_levels(best_sa)
+        n = len(best_sa)
+        greedy_c = best_sa_c = 0.0
+        improvement = 0.0
+        cost_label = 'energy'
+        avg_bpm_jump = max_bpm_jump = 0.0
+        key_clashes = 0
+
+        if n > 1:
+            bpm_jumps = [abs(best_sa[i]['tempo'] - best_sa[i + 1]['tempo']) for i in range(n - 1)]
+            key_clashes = sum(1 for i in range(n - 1)
+                             if camelot_distance(best_sa[i]['camelot'], best_sa[i + 1]['camelot']) > 2)
+            avg_bpm_jump = round(sum(bpm_jumps) / len(bpm_jumps), 1)
+            max_bpm_jump = round(max(bpm_jumps), 1)
+
+        cb(1.0, 'Done!')
+
+        tracks_out = []
+        for t in best_sa:
+            cam = f"{t['camelot'][0]}{t['camelot'][1]}"
+            tracks_out.append({
+                'name': t['name'],
+                'artist': t.get('artist', ''),
+                'bpm': t['tempo'],
+                'camelot': cam,
+                'energy_level': t.get('energy_level'),
+                'path': t['path'],
+            })
+
+        return {
+            'tracks': tracks_out,
+            'greedy_cost': round(greedy_c, 4),
+            'sa_cost': round(best_sa_c, 4),
+            'improvement_pct': round(improvement, 1),
+            'cost_function': cost_label,
+            'avg_bpm_jump': avg_bpm_jump,
+            'max_bpm_jump': max_bpm_jump,
+            'key_clashes': key_clashes,
+            'skipped_tracks': skipped_data,
+        }
+
+    # ── Standard optimize mode (greedy + SA) ────────────────────────────────
     model = load_transition_model()
     if model is not None:
         cost_fn = lambda a, b: ml_transition_cost(a, b, model)

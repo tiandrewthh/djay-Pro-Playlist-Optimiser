@@ -159,3 +159,13 @@ def assign_energy_levels(tracks):
     for rank, idx in enumerate(order):
         tracks[idx]['energy_level'] = min(5, int(rank / n * 5) + 1)
     return tracks
+
+
+def sort_by_energy(tracks, ascending=True):
+    """Sort tracks by spectral flux (energy), optionally ascending or descending."""
+    return sorted(tracks, key=lambda t: t.get('spectral_flux', 0), reverse=not ascending)
+
+
+def sort_by_energy(tracks, ascending=True):
+    """Sort tracks by spectral flux (energy), optionally ascending or descending."""
+    return sorted(tracks, key=lambda t: t.get('spectral_flux', 0), reverse=not ascending)

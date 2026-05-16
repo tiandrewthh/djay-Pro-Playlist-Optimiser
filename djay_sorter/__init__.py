@@ -53,6 +53,7 @@ from .sorting import (
     greedy_sort,
     simulated_annealing_sort,
     assign_energy_levels,
+    sort_by_energy,
 )
 
 # ── Export ──────────────────────────────────────────────────────────────────
