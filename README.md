@@ -24,8 +24,6 @@ Open [http://localhost:8000](http://localhost:8000).
 
 ![Screenshot](images/screenshot.png)
 
-[![Demo Video](images/thumbnail.jpg)](https://github.com/tiandrewthh/djay-Pro-Playlist-Optimiser/blob/main/images/demo.mp4?raw=true)
-
 ## Requirements
 
 - macOS (djay Pro stores its library in `~/Music/djay/`)
