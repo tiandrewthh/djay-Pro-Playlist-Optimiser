@@ -1,9 +1,24 @@
 # DJ Playlist Optimiser
 
+[![Python](https://img.shields.io/badge/Python-3.9--3.12-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-88%20passed-brightgreen.svg)](tests/)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+
 Reorders djay Pro playlists for smoother DJ sets using Camelot key compatibility,
 BPM progression, and energy flow. Runs a greedy sort followed by simulated
 annealing to find the best track order, then optionally writes the result back
 to djay Pro.
+
+## Features
+
+- **Harmonic mixing** — Camelot wheel compatibility for smooth key transitions
+- **BPM progression** — Intelligent tempo ordering for natural energy builds
+- **Energy flow** — Automatic energy level classification (low/medium/high)
+- **ML personalisation** — Learns from your djay Pro set history to match your style
+- **Async processing** — Background sort jobs with progress tracking
+- **Multiple export** — M3U files or direct write-back to djay Pro
+- **CLI & Web UI** — Command-line tools and a responsive browser interface
 
 ## Quick start
 
@@ -94,7 +109,7 @@ tests/
 
 ## API endpoints
 
-See [Swagger UI](http://localhost:8000/docs) when the server is running.
+Full documentation available at [Swagger UI](http://localhost:8000/docs) when the server is running.
 
 | Method | Path | Description |
 |---|---|---|
@@ -118,6 +133,17 @@ sets in `~/Music/djay/Recordings/`. The model is saved to
 python -m djay_sorter train
 ```
 
+## Troubleshooting
+
+| Issue | Solution |
+|---|---|
+| `librosa` install fails on macOS | Install `libsndfile` first: `brew install libsndfile` |
+| djay Pro database not found | Ensure djay Pro has been launched at least once; the DB lives in `~/Music/djay/` |
+| `ffmpeg` not found | Install via Homebrew: `brew install ffmpeg` |
+| CORS errors from browser UI | Set `CORS_ORIGINS` env var to match your frontend URL |
+| Sort job stuck/failed | Check `/health` endpoint for running jobs; restart server if needed |
+| Tracks missing BPM/key | Audio files must be local (not streaming); re-analyse with `extract_audio_features` |
+
 ## Development
 
 ```bash
@@ -130,3 +156,17 @@ ruff check . && ruff format .
 # Pre-commit hooks (lint + test)
 pre-commit install
 ```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
